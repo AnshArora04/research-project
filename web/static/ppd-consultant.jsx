@@ -4,6 +4,9 @@ function ConsultantPage() {
   const { CONSULTANTS, SYSTEMS, AGG_OMEGA, YEARS } = window.PPDData;
   const [selectedId, setSelectedId] = React.useState(CONSULTANTS[0].id);
   const [metric, setMetric] = React.useState('omega');
+  const fyFirst   = YEARS[0];
+  const fyLast    = YEARS[YEARS.length - 1];
+  const lastIdx   = YEARS.length - 1;
   const {
     BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip,
     ResponsiveContainer, CartesianGrid, Legend, Cell
@@ -35,14 +38,14 @@ function ConsultantPage() {
       'System': s.name,
       'State': s.stateName,
       'AUM ($B)': s.aumB,
-      'Omega 2021': window.pct(latest.omega),
-      'Omega 2001': window.pct(earliest.omega),
+      [`Omega ${fyLast}`]: window.pct(latest.omega),
+      [`Omega ${fyFirst}`]: window.pct(earliest.omega),
       'Funded Ratio': window.pct(latest.fundedRatio),
-      'Net Return (2021)': window.pct(latest.netReturn),
+      [`Net Return (${fyLast})`]: window.pct(latest.netReturn),
     };
   }).sort((a, b) => b['AUM ($B)'] - a['AUM ($B)']);
 
-  // Omega distribution among clients vs all systems (2021)
+  // Omega distribution among clients vs all systems (latest year)
   const omegaBuckets = ['< 15%','15–20%','20–25%','25–30%','30–35%','35–40%','40–45%','≥ 45%'];
   const getBucket = v => {
     if (v < 15) return 0; if (v < 20) return 1; if (v < 25) return 2; if (v < 30) return 3;
@@ -50,16 +53,27 @@ function ConsultantPage() {
   };
   const clientCounts = new Array(8).fill(0);
   const allCounts = new Array(8).fill(0);
-  consultant.clients.forEach(s => { clientCounts[getBucket(s.years[20].omega)]++; });
-  SYSTEMS.forEach(s => { allCounts[getBucket(s.years[20].omega)]++; });
+  consultant.clients.forEach(s => {
+    const v = s.years[lastIdx].omega;
+    if (v != null) clientCounts[getBucket(v)]++;
+  });
+  SYSTEMS.forEach(s => {
+    const v = s.years[lastIdx].omega;
+    if (v != null) allCounts[getBucket(v)]++;
+  });
   const distData = omegaBuckets.map((label, i) => ({
     bucket: label,
     clients: clientCounts[i],
     allSystems: parseFloat(((allCounts[i] / SYSTEMS.length) * (consultant.clients.length || 1)).toFixed(1)),
   }));
 
-  const consultantAvgOmega = Math.round(consultant.clients.reduce((a, s) => a + s.years[20].omega, 0) / Math.max(1, consultant.clients.length) * 10) / 10;
-  const allAvgOmega = AGG_OMEGA[20];
+  const validClientOmegas = consultant.clients
+    .map(s => s.years[lastIdx].omega)
+    .filter(v => v != null);
+  const consultantAvgOmega = validClientOmegas.length
+    ? Math.round(validClientOmegas.reduce((a, v) => a + v, 0) / validClientOmegas.length * 10) / 10
+    : 0;
+  const allAvgOmega = AGG_OMEGA[lastIdx];
   const diffStr = (consultantAvgOmega - allAvgOmega).toFixed(1);
 
   return (
@@ -92,8 +106,8 @@ function ConsultantPage() {
 
       {/* KPIs */}
       <div style={{ display: 'flex', gap: 16, marginBottom: 32 }}>
-        <window.KPITile label="Total Client AUM" value={`$${consultant.totalAUM}B`} sub="Sum of assets under advisement, FY 2021" accent={window.C.blue} />
-        <window.KPITile label="Client Systems" value={String(consultant.clientCount)} sub="Pension funds in the PPD sample (2021)" accent={window.C.sky} />
+        <window.KPITile label="Total Client AUM" value={`$${consultant.totalAUM}B`} sub={`Sum of assets under advisement, FY ${fyLast}`} accent={window.C.blue} />
+        <window.KPITile label="Client Systems" value={String(consultant.clientCount)} sub={`Pension funds in the PPD sample (${fyLast})`} accent={window.C.sky} />
         <window.KPITile label="Avg Client Omega" value={window.pct(consultantAvgOmega)} sub={`${parseFloat(diffStr) >= 0 ? '+' : ''}${diffStr}pp vs ${window.pct(allAvgOmega)} all-system avg`} accent={parseFloat(diffStr) >= 0 ? window.C.green : window.C.red} />
       </div>
 
@@ -113,7 +127,7 @@ function ConsultantPage() {
       </div>
       <window.ChartShell
         title={`${METRIC_LABELS[metric]} — ${consultant.name} Clients vs All Systems`}
-        insight={`${consultant.name} clients averaged ${window.pct(metricData[20].clients)} in ${METRIC_LABELS[metric].toLowerCase()} in 2021, compared to the all-system average of ${window.pct(metricData[20].allSystems)}.`}
+        insight={`${consultant.name} clients averaged ${window.pct(metricData[lastIdx].clients)} in ${METRIC_LABELS[metric].toLowerCase()} in ${fyLast}, compared to the all-system average of ${window.pct(metricData[lastIdx].allSystems)}.`}
         height={240}
       >
         <ResponsiveContainer width="100%" height="100%">
@@ -130,7 +144,7 @@ function ConsultantPage() {
       </window.ChartShell>
 
       {/* Distribution chart */}
-      <window.SectionHeader>Omega Distribution (2021)</window.SectionHeader>
+      <window.SectionHeader>Omega Distribution ({fyLast})</window.SectionHeader>
       <window.ChartShell
         title="Client Fund Count by Alternative Share Bucket"
         insight={`${consultant.name} client funds cluster in the ${consultant.clients.length ? omegaBuckets[getBucket(consultantAvgOmega)] : '—'} omega range. Distribution shown as count of client systems vs proportional all-system benchmark.`}

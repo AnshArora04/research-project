@@ -3,8 +3,15 @@
 function SystemDeepDivePage() {
   const { SYSTEMS, AGG_OMEGA, YEARS } = window.PPDData;
   const [query, setQuery] = React.useState('');
-  const [selectedId, setSelectedId] = React.useState('CA001');
+  // Default to the largest fund by AUM so first paint shows a real, named system
+  const defaultId = React.useMemo(
+    () => [...SYSTEMS].sort((a, b) => b.aumB - a.aumB)[0]?.id || SYSTEMS[0]?.id,
+    [SYSTEMS]
+  );
+  const [selectedId, setSelectedId] = React.useState(defaultId);
   const [showDropdown, setShowDropdown] = React.useState(false);
+  const fyFirst = YEARS[0];
+  const fyLast  = YEARS[YEARS.length - 1];
   const {
     AreaChart, Area, LineChart, Line, BarChart, Bar,
     ComposedChart, XAxis, YAxis, Tooltip, Legend,
@@ -68,9 +75,9 @@ function SystemDeepDivePage() {
     netReturn: y.netReturn,
   }));
 
-  const peerAvgOmega2021 = AGG_OMEGA[20];
+  const peerAvgOmegaLatest = AGG_OMEGA[AGG_OMEGA.length - 1];
   const omegaDelta = latestYear.omega - firstYear.omega;
-  const aboveBelow = latestYear.omega >= peerAvgOmega2021 ? 'above' : 'below';
+  const aboveBelow = latestYear.omega >= peerAvgOmegaLatest ? 'above' : 'below';
 
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 8px' }}>
@@ -140,13 +147,13 @@ function SystemDeepDivePage() {
       {/* KPI Tiles */}
       <div style={{ display: 'flex', gap: 16, marginBottom: 32 }}>
         <window.KPITile
-          label="Latest Omega (2021)"
+          label={`Latest Omega (${fyLast})`}
           value={window.pct(latestYear.omega)}
-          sub={`Alt. share of risky portfolio — ${aboveBelow} peer avg of ${window.pct(peerAvgOmega2021)}`}
+          sub={`Alt. share of risky portfolio — ${aboveBelow} peer avg of ${window.pct(peerAvgOmegaLatest)}`}
           accent={window.C.blue}
         />
         <window.KPITile
-          label="Funded Ratio (2021)"
+          label={`Funded Ratio (${fyLast})`}
           value={window.pct(latestYear.fundedRatio)}
           sub="Actuarial assets ÷ actuarial liabilities (GASB basis)"
           accent={latestYear.fundedRatio >= 80 ? window.C.green : latestYear.fundedRatio >= 65 ? window.C.sky : window.C.red}
@@ -163,7 +170,7 @@ function SystemDeepDivePage() {
       <window.SectionHeader>Target Allocation Over Time</window.SectionHeader>
       <window.ChartShell
         title="Portfolio Allocation by Asset Class"
-        insight={`${system.name.split(' ').slice(0, 2).join(' ')} expanded its alternatives share from ${window.pct(firstYear.omega)} in 2001 to ${window.pct(latestYear.omega)} in 2021 — a ${omegaDelta > 0 ? '+' : ''}${omegaDelta.toFixed(1)}pp shift ${aboveBelow} the ${window.pct(peerAvgOmega2021)} peer average.`}
+        insight={`${system.name.split(' ').slice(0, 2).join(' ')} expanded its alternatives share from ${window.pct(firstYear.omega)} in ${fyFirst} to ${window.pct(latestYear.omega)} in ${fyLast} — a ${omegaDelta > 0 ? '+' : ''}${omegaDelta.toFixed(1)}pp shift ${aboveBelow} the ${window.pct(peerAvgOmegaLatest)} peer average.`}
         height={260}
       >
         <ResponsiveContainer width="100%" height="100%">
@@ -193,7 +200,7 @@ function SystemDeepDivePage() {
       <window.SectionHeader>Alternative Share vs Peer Average</window.SectionHeader>
       <window.ChartShell
         title="Omega (ω) — System vs All-Fund Average"
-        insight={`The fund's alternative share has grown ${omegaDelta > 0 ? 'faster' : 'slower'} than the peer average since 2001, ending ${Math.abs(latestYear.omega - peerAvgOmega2021).toFixed(1)}pp ${aboveBelow} the cross-sectional mean in 2021.`}
+        insight={`The fund's alternative share has grown ${omegaDelta > 0 ? 'faster' : 'slower'} than the peer average since ${fyFirst}, ending ${Math.abs(latestYear.omega - peerAvgOmegaLatest).toFixed(1)}pp ${aboveBelow} the cross-sectional mean in ${fyLast}.`}
         height={240}
       >
         <ResponsiveContainer width="100%" height="100%">
@@ -213,7 +220,7 @@ function SystemDeepDivePage() {
       <window.SectionHeader>Funding Status</window.SectionHeader>
       <window.ChartShell
         title="Funded Ratio & Assumed Return"
-        insight={`Funded ratio declined from ${window.pct(firstYear.fundedRatio)} (2001) to ${window.pct(latestYear.fundedRatio)} (2021), while the assumed return fell from ${window.pct(firstYear.assumedReturn)} to ${window.pct(latestYear.assumedReturn)} as boards adjusted expectations post-GFC.`}
+        insight={`Funded ratio moved from ${window.pct(firstYear.fundedRatio)} (${fyFirst}) to ${window.pct(latestYear.fundedRatio)} (${fyLast}), while the assumed return moved from ${window.pct(firstYear.assumedReturn)} to ${window.pct(latestYear.assumedReturn)} as boards adjusted expectations post-GFC.`}
         height={240}
       >
         <ResponsiveContainer width="100%" height="100%">
@@ -234,7 +241,13 @@ function SystemDeepDivePage() {
       <window.SectionHeader>Annual Performance</window.SectionHeader>
       <window.ChartShell
         title="Annual Net Return (%)"
-        insight={`Returns closely track market cycles. The 2008 drawdown was ${window.pct(Math.min(...returnData.map(d => d.netReturn)))}, while the 2009 recovery reached ${window.pct(Math.max(...returnData.slice(8,12).map(d => d.netReturn)))}.`}
+        insight={(() => {
+          const valid = returnData.filter(d => d.netReturn != null);
+          if (!valid.length) return 'Net returns not available for this fund.';
+          const worst = valid.reduce((a, b) => b.netReturn < a.netReturn ? b : a);
+          const best  = valid.reduce((a, b) => b.netReturn > a.netReturn ? b : a);
+          return `Returns track market cycles. Worst year in window: ${worst.year} at ${window.pct(worst.netReturn)}; best year: ${best.year} at ${window.pct(best.netReturn)}. Bars are net of fees.`;
+        })()}
         height={220}
       >
         <ResponsiveContainer width="100%" height="100%">

@@ -1,14 +1,26 @@
 // PPD Explorer — Methodology + App Shell
 
 function MethodologyPage() {
+  const {
+    SYSTEM_COUNT, CONSULTANT_COUNT, ANALYTIC_OBS, TOTAL_AUM_EXACT,
+    YEARS, ARR_TREND, OMEGA_RANGE, TOP_CONSULTANTS,
+  } = window.PPDData;
+  const fyFirst = YEARS[0];
+  const fyLast  = YEARS[YEARS.length - 1];
+  const nYears  = YEARS.length;
+  const totalAumStr = TOTAL_AUM_EXACT >= 1000
+    ? `$${(TOTAL_AUM_EXACT / 1000).toFixed(2)} trillion`
+    : `$${TOTAL_AUM_EXACT.toFixed(0)} billion`;
+  const topConsultantsStr = TOP_CONSULTANTS.slice(0, 4).join(', ');
+
   const sections = [
     {
       title: 'Data Source',
-      body: `This dashboard draws on the Public Plans Database (PPD), a comprehensive panel of U.S. state and local government pension systems maintained by the Center for Retirement Research at Boston College. The underlying paper — Begenau, Liang & Siriwardane (2026, Review of Financial Studies) — constructs a balanced panel of 174 systems with continuous coverage across fiscal years 2001–2021, yielding approximately 3,128 system-year observations.`
+      body: `This dashboard draws on the Public Plans Database (PPD), a comprehensive panel of U.S. state and local government pension systems maintained by the Center for Retirement Research at Boston College. The underlying paper — Begenau, Liang & Siriwardane (2026, Review of Financial Studies) — uses fiscal years ${fyFirst}–${fyLast}. The panel exposed by this dashboard contains ${SYSTEM_COUNT} systems and ${ANALYTIC_OBS.toLocaleString()} system-year observations with non-zero target-allocation reporting.`
     },
     {
       title: 'Key Variable: Omega (ω)',
-      body: `Omega is defined as the share of the risky portfolio allocated to alternative investments. The risky portfolio excludes cash and short-duration fixed income; it includes public equities, private equity, hedge funds, real assets (real estate, infrastructure, commodities), and other alternatives. Formally: ω = (Private Equity + Hedge Funds + Real Assets) ÷ (Total Risky Assets). Values range from approximately 8% to 55% across systems and years.`
+      body: `Omega is defined as the share of the risky portfolio allocated to alternative investments. The risky portfolio excludes cash and short-duration fixed income; it includes public equities, private equity, hedge funds, real assets (real estate, infrastructure, commodities), and other alternatives. Formally: ω = (Private Equity + Hedge Funds + Real Assets) ÷ (Total Risky Assets). In this panel, ω ranges from ${OMEGA_RANGE.min.toFixed(1)}% to ${OMEGA_RANGE.max.toFixed(1)}% across all system-years.`
     },
     {
       title: 'Asset Allocation Categories',
@@ -20,11 +32,11 @@ function MethodologyPage() {
     },
     {
       title: 'Assumed Rate of Return',
-      body: `Each system sets an actuarial assumed rate of return (ARR) used to discount future liabilities. The median ARR declined from approximately 8.0% in 2001 to 7.0% by 2021, reflecting both lower capital market expectations and pressure from actuaries. Higher ARRs mechanically reduce reported liabilities and improve funded ratios; the paper analyzes how ARR choices interact with alternative allocations.`
+      body: `Each system sets an actuarial assumed rate of return (ARR) used to discount future liabilities. In this panel, the AUM-weighted average ARR declined from ${ARR_TREND.firstValue.toFixed(2)}% in ${ARR_TREND.firstFy} to ${ARR_TREND.lastValue.toFixed(2)}% in ${ARR_TREND.lastFy}, reflecting lower capital market expectations and actuarial pressure. Higher ARRs mechanically reduce reported liabilities and improve funded ratios; the paper analyzes how ARR choices interact with alternative allocations.`
     },
     {
       title: 'Investment Consultants',
-      body: `Investment consultants advise pension boards on asset allocation, manager selection, and risk management. The PPD includes consultant identifiers for a subset of systems. The paper examines whether consultant relationships correlate with higher omega — controlling for fund size, governance quality, and state-level factors. Roughly 57 distinct consultants appear in the full sample; the largest (Callan, NEPC, Meketa, Mercer) collectively advise the majority of AUM.`
+      body: `Investment consultants advise pension boards on asset allocation, manager selection, and risk management. The PPD includes consultant identifiers for a subset of systems. The paper examines whether consultant relationships correlate with higher omega — controlling for fund size, governance quality, and state-level factors. ${CONSULTANT_COUNT} distinct general investment consultants appear in this panel; the largest by client AUM are ${topConsultantsStr}.`
     },
     {
       title: 'Net Returns',
@@ -32,11 +44,11 @@ function MethodologyPage() {
     },
     {
       title: 'Sample Construction',
-      body: `The 174 systems in the balanced panel were selected to have complete data on omega, funded ratio, and returns across all 21 fiscal years. Systems with missing fiscal year coverage, mid-period mergers, or incomplete alternative allocation disclosures were excluded. The sample skews toward larger, more sophisticated systems — smaller funds are underrepresented. Total sample AUM is approximately $4.5 trillion in FY 2021.`
+      body: `${SYSTEM_COUNT} systems are tracked across ${nYears} fiscal years (${fyFirst}–${fyLast}). The cleaning pipeline drops plan-level rows whose target/actual weight sums diverge from 1 by more than 5pp, requires non-missing target allocations, and aggregates to the system level (AUM-weighted). Total panel AUM in ${fyLast} is approximately ${totalAumStr}.`
     },
     {
-      title: 'Note on Mock Data',
-      body: `All data displayed in this dashboard are synthetic, generated to match the statistical properties reported in Begenau, Liang & Siriwardane (2026): aggregate omega growth from ~15% (2001) to ~35% (2021), funded ratio trends consistent with the 2008 crisis, and return distributions calibrated to plausible capital market outcomes. No actual pension fund data is reproduced. For the real dataset, refer to the PPD at publicplansdata.org or the paper's replication archive.`
+      title: 'Data Provenance',
+      body: `All values shown in this dashboard come from the cleaned Public Plans Database parquet (output_python/ppd_plan_level_clean.parquet) via the dashboard.lib.aggregations layer. Per-system-year metrics are AUM-weighted aggregations of the underlying plan rows. Numbers are computed at server start by web/bake_data.py and served as a single static JS bundle — no synthetic data is generated.`
     },
   ];
 
@@ -86,6 +98,9 @@ function App() {
   const [tweaksOpen, setTweaksOpen] = React.useState(false);
   const [glowEnabled, setGlowEnabled] = React.useState(true);
   const [compactMode, setCompactMode] = React.useState(false);
+  const { SYSTEM_COUNT, YEARS } = window.PPDData;
+  const fyFirst = YEARS[0];
+  const fyLast  = YEARS[YEARS.length - 1];
 
   React.useEffect(() => {
     window.addEventListener('message', e => {
@@ -155,8 +170,8 @@ function App() {
         {/* Footer */}
         <div style={{ padding: '16px 20px', borderTop: `1px solid ${window.C.border}` }}>
           <div style={{ fontFamily: window.mono, color: window.C.textMuted, fontSize: 9, lineHeight: 1.6 }}>
-            159 systems · FY 2001–2021<br />
-            Mock data only
+            {SYSTEM_COUNT} systems · FY {fyFirst}–{fyLast}<br />
+            Real PPD data
           </div>
         </div>
       </nav>
@@ -188,7 +203,7 @@ function App() {
               <input type="checkbox" checked={compactMode} onChange={e => setCompactMode(e.target.checked)} style={{ accentColor: window.C.blue }} />
             </label>
             <div style={{ color: window.C.textMuted, fontSize: 10, borderTop: `1px solid ${window.C.border}`, paddingTop: 10, lineHeight: 1.5 }}>
-              Use the sidebar to navigate pages.<br />All data is synthetic mock data.
+              Use the sidebar to navigate pages.<br />Data: real PPD parquet, baked at server start.
             </div>
           </div>
         </div>

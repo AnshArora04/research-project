@@ -2,22 +2,29 @@
 
 function StateRegionalPage() {
   const { STATES, YEARS } = window.PPDData;
+  const fyFirst = YEARS[0];
+  const fyLast  = YEARS[YEARS.length - 1];
+  const lastIdx = YEARS.length - 1;
+  // Default selected states: top 5 by total AUM in latest year
+  const top5 = React.useMemo(
+    () => [...STATES].sort((a, b) => b.totalAUM - a.totalAUM).slice(0, 5).map(s => s.code),
+    [STATES]
+  );
   const [mode, setMode] = React.useState('rank');
-  const [selectedCodes, setSelectedCodes] = React.useState(['CA','NY','TX','IL','FL']);
+  const [selectedCodes, setSelectedCodes] = React.useState(top5);
   const {
     BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip,
     ResponsiveContainer, CartesianGrid, Legend, Cell
   } = Recharts;
 
-  const top5 = ['CA','NY','TX','IL','FL'];
   const PALETTE = [window.C.blue, window.C.sky, window.C.green, window.C.purple, window.C.red, '#FB923C', '#FBBF24', '#EC4899'];
 
-  // Ranking data (all states, sorted by 2021 omega)
+  // Ranking data (all states, sorted by latest-year omega)
   const rankData = [...STATES]
     .sort((a, b) => b.latestOmega - a.latestOmega)
     .map(st => ({ state: st.code, name: st.name, omega: st.latestOmega, aum: st.totalAUM }));
 
-  // Trend data (selected states over time)
+  // Trend data (selected states over time) — uses bake's per-state-year averages
   const trendData = YEARS.map((year, i) => {
     const row = { year: String(year) };
     selectedCodes.forEach(code => {
@@ -26,6 +33,9 @@ function StateRegionalPage() {
     });
     return row;
   });
+
+  // Derive top-AUM caption from real data, not hardcoded list
+  const topByAumCaption = top5.join(', ');
 
   function toggleState(code) {
     setSelectedCodes(prev =>
@@ -64,8 +74,8 @@ function StateRegionalPage() {
 
       {mode === 'rank' && (
         <>
-          <window.SectionHeader>All States Ranked by Alternative Share (2021)</window.SectionHeader>
-          <window.InsightBox text={`${topOmegaState.name} leads with ${window.pct(topOmegaState.omega)} omega, while ${bottomOmegaState.name} trails at ${window.pct(bottomOmegaState.omega)} — a ${spread}pp spread across states in 2021.`} />
+          <window.SectionHeader>All States Ranked by Alternative Share ({fyLast})</window.SectionHeader>
+          <window.InsightBox text={`${topOmegaState.name} leads with ${window.pct(topOmegaState.omega)} omega, while ${bottomOmegaState.name} trails at ${window.pct(bottomOmegaState.omega)} — a ${spread}pp spread across states in ${fyLast}.`} />
           <div style={{ width: '100%', height: Math.max(480, rankData.length * 22) }}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={rankData} layout="vertical" margin={{ top: 4, right: 60, bottom: 0, left: 40 }}>
@@ -83,7 +93,7 @@ function StateRegionalPage() {
                     </div>
                   );
                 }} />
-                <Bar dataKey="omega" name="Omega 2021" radius={[0, 3, 3, 0]}>
+                <Bar dataKey="omega" name={`Omega ${fyLast}`} radius={[0, 3, 3, 0]}>
                   {rankData.map((d, i) => {
                     const t = i / (rankData.length - 1);
                     const r = Math.round(59 + t * (239 - 59));
@@ -122,7 +132,7 @@ function StateRegionalPage() {
               })}
             </div>
             <div style={{ fontFamily: window.sans, color: window.C.textMuted, fontSize: 11, marginTop: 8 }}>
-              Default: top 5 by AUM (CA, NY, TX, IL, FL). Select any combination to compare.
+              Default: top 5 by AUM ({topByAumCaption}). Select any combination to compare.
             </div>
           </div>
 
@@ -146,8 +156,8 @@ function StateRegionalPage() {
 
           <window.SectionHeader>Alternative Share Over Time — Selected States</window.SectionHeader>
           <window.ChartShell
-            title="Average Omega by State (FY 2001–2021)"
-            insight={`Among the selected states, ${(() => { const sorted = selectedCodes.map(c => ({ code: c, v: STATES.find(s=>s.code===c)?.latestOmega || 0 })).sort((a,b)=>b.v-a.v); return sorted[0] ? STATES.find(s=>s.code===sorted[0].code)?.name : '' })()} leads with the highest alternative share in 2021, with all selected states showing meaningful growth post-2012.`}
+            title={`Average Omega by State (FY ${fyFirst}–${fyLast})`}
+            insight={`Among the selected states, ${(() => { const sorted = selectedCodes.map(c => ({ code: c, v: STATES.find(s=>s.code===c)?.latestOmega || 0 })).sort((a,b)=>b.v-a.v); return sorted[0] ? STATES.find(s=>s.code===sorted[0].code)?.name : '' })()} leads with the highest alternative share in ${fyLast}.`}
             height={280}
           >
             <ResponsiveContainer width="100%" height="100%">
@@ -172,16 +182,16 @@ function StateRegionalPage() {
       {/* Scatter: omega vs funded ratio */}
       {mode === 'compare' && (
         <>
-          <window.SectionHeader>Omega vs Funded Ratio (2021)</window.SectionHeader>
+          <window.SectionHeader>Omega vs Funded Ratio ({fyLast})</window.SectionHeader>
           <window.ChartShell
-            title="Alternative Share vs Funding Health — All States, FY 2021"
-            insight="Higher-omega states do not systematically show lower funding ratios — consistent with the paper's Table 7 finding that risk-seeking motive explains little of the shift to alternatives (beta = −0.10, t = −1.16)."
+            title={`Alternative Share vs Funding Health — All States, FY ${fyLast}`}
+            insight={`Each marker is a state in ${fyLast}, sized by total AUM. Selected states (sidebar) are highlighted.`}
             height={300}
           >
             <ResponsiveContainer width="100%" height="100%">
               <Recharts.ScatterChart margin={{ top: 10, right: 30, bottom: 10, left: 0 }}>
                 <CartesianGrid stroke={window.C.border} strokeDasharray="3 3" />
-                <XAxis type="number" dataKey="omega" name="Omega" tick={{ fill: window.C.textMuted, fontSize: 10, fontFamily: window.mono }} axisLine={false} tickLine={false} tickFormatter={v => v + '%'} label={{ value: 'Omega 2021 (%)', fill: window.C.textMuted, fontSize: 10, fontFamily: window.mono, position: 'insideBottom', offset: -2 }} />
+                <XAxis type="number" dataKey="omega" name="Omega" tick={{ fill: window.C.textMuted, fontSize: 10, fontFamily: window.mono }} axisLine={false} tickLine={false} tickFormatter={v => v + '%'} label={{ value: `Omega ${fyLast} (%)`, fill: window.C.textMuted, fontSize: 10, fontFamily: window.mono, position: 'insideBottom', offset: -2 }} />
                 <YAxis type="number" dataKey="funded" name="Funded Ratio" tick={{ fill: window.C.textMuted, fontSize: 10, fontFamily: window.mono }} axisLine={false} tickLine={false} tickFormatter={v => v + '%'} width={42} label={{ value: 'Funded Ratio (%)', fill: window.C.textMuted, fontSize: 10, fontFamily: window.mono, angle: -90, position: 'insideLeft' }} />
                 <Tooltip content={({ active, payload }) => {
                   if (!active || !payload?.length) return null;
@@ -198,7 +208,7 @@ function StateRegionalPage() {
                 <Recharts.Scatter
                   data={STATES.map(st => ({
                     omega: st.latestOmega,
-                    funded: st.avgByYear[20].avgFunded,
+                    funded: st.avgByYear[lastIdx].avgFunded,
                     name: st.name,
                     code: st.code,
                     aum: st.totalAUM,
@@ -231,8 +241,8 @@ function StateRegionalPage() {
       {/* Download */}
       <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${window.C.border}`, display: 'flex', justifyContent: 'flex-end' }}>
         <window.DownloadCSV
-          data={rankData.map(d => ({ state: d.state, name: d.name, omega2021: d.omega, totalAumB: d.aum }))}
-          filename="state_rankings_2021.csv"
+          data={rankData.map(d => ({ state: d.state, name: d.name, [`omega${fyLast}`]: d.omega, totalAumB: d.aum }))}
+          filename={`state_rankings_${fyLast}.csv`}
           label="EXPORT STATE RANKINGS"
         />
       </div>

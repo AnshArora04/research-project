@@ -1,32 +1,38 @@
-// PPD Explorer — Landing Page (v2 — calibrated to paper statistics)
+// PPD Explorer — Landing Page (real PPD data, no hardcoded numbers)
 
 function LandingPage({ navigate }) {
-  const { LANDING_DATA, TOTAL_AUM, SYSTEM_COUNT, AGG_OMEGA, CONSULTANT_COUNT } = window.PPDData;
   const {
-    AreaChart, Area, LineChart, Line, BarChart, Bar,
-    XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine, Cell
+    LANDING_DATA, SUB_ALLOC, TOTAL_AUM, TOTAL_AUM_EXACT, SYSTEM_COUNT, ANALYTIC_OBS,
+    AGG_OMEGA, CONSULTANT_COUNT, YEARS,
+  } = window.PPDData;
+  const {
+    AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
+    CartesianGrid, ReferenceLine,
   } = Recharts;
 
+  const fyFirst = YEARS[0];
+  const fyLast  = YEARS[YEARS.length - 1];
   const omegaStart = AGG_OMEGA[0];
-  const omegaEnd   = AGG_OMEGA[20];
+  const omegaEnd   = AGG_OMEGA[AGG_OMEGA.length - 1];
   const omegaGrowth = (omegaEnd - omegaStart).toFixed(1);
 
-  // Mini sparkline data for sub-allocation trends (Figure 2b calibrated)
-  const subAllocData = window.PPDData.YEARS.map((year, i) => {
-    const t = i / 20;
-    return {
-      year: String(year),
-      realAssets: parseFloat((4 + 8 * t).toFixed(1)),
-      privateEquity: parseFloat((4 + 6 * t).toFixed(1)),
-      hedgeFunds: parseFloat((0.5 + 5.5 * t).toFixed(1)),
-    };
-  });
+  // Sub-allocation sparkline data — built from real per-year SUB_ALLOC bake.
+  const subAllocData = YEARS.map((year, i) => ({
+    year: String(year),
+    realAssets:    SUB_ALLOC.realAssets[i],
+    privateEquity: SUB_ALLOC.privateEquity[i],
+    hedgeFunds:    SUB_ALLOC.hedgeFunds[i],
+  }));
 
   const navItems = [
-    { page: 'system',      icon: '◉', label: 'System Deep Dive',    desc: 'Drill into any of 159 funds — allocations, returns, funding trajectories, and peer comparison.' },
-    { page: 'consultant',  icon: '◈', label: 'Consultant Analysis',  desc: 'Compare investment advisors by client AUM, count, and average alternative allocations.' },
-    { page: 'state',       icon: '◫', label: 'State & Regional',     desc: 'Rank states by omega, compare funding health, and chart geographic adoption patterns.' },
-    { page: 'methodology', icon: '≡', label: 'Methodology',          desc: 'Variable definitions, regression specifications, and data source documentation.' },
+    { page: 'system',      icon: '◉', label: 'System Deep Dive',
+      desc: `Drill into any of ${SYSTEM_COUNT} funds — allocations, returns, funding trajectories, and peer comparison.` },
+    { page: 'consultant',  icon: '◈', label: 'Consultant Analysis',
+      desc: 'Compare investment advisors by client AUM, count, and average alternative allocations.' },
+    { page: 'state',       icon: '◫', label: 'State & Regional',
+      desc: 'Rank states by omega, compare funding health, and chart geographic adoption patterns.' },
+    { page: 'methodology', icon: '≡', label: 'Methodology',
+      desc: 'Variable definitions, sample construction, and data source documentation.' },
   ];
 
   return (
@@ -43,7 +49,7 @@ function LandingPage({ navigate }) {
       </h1>
       <p style={{ fontFamily: window.sans, color: window.C.textMuted, fontSize: 14, margin: '0 0 28px', lineHeight: 1.7, maxWidth: 600 }}>
         U.S. public defined-benefit pension funds steadily shifted their risky portfolios toward
-        alternatives over 2001–2021. Explore that transformation across {SYSTEM_COUNT} systems
+        alternatives over {fyFirst}–{fyLast}. Explore that transformation across {SYSTEM_COUNT} systems
         — allocation trends, funding trajectories, consultant relationships, and state-level comparisons.
       </p>
 
@@ -58,12 +64,12 @@ function LandingPage({ navigate }) {
               Alternative-to-Risky Share (Omega, ω)
             </div>
             <div style={{ fontFamily: window.sans, color: window.C.textMuted, fontSize: 12, marginTop: 3 }}>
-              Cross-sectional aggregate, FY 2001–2021 &nbsp;·&nbsp; Figure 2c in paper
+              AUM-weighted aggregate, FY {fyFirst}–{fyLast} &nbsp;·&nbsp; Figure 2c in paper
             </div>
           </div>
           <div style={{ fontFamily: window.mono, textAlign: 'right' }}>
             <div style={{ color: window.C.blue, fontSize: 24, fontWeight: 700, lineHeight: 1 }}>{omegaEnd.toFixed(1)}%</div>
-            <div style={{ color: window.C.textMuted, fontSize: 10, marginTop: 3 }}>2021 aggregate</div>
+            <div style={{ color: window.C.textMuted, fontSize: 10, marginTop: 3 }}>{fyLast} aggregate</div>
           </div>
         </div>
         <ResponsiveContainer width="100%" height={230}>
@@ -86,63 +92,68 @@ function LandingPage({ navigate }) {
           </AreaChart>
         </ResponsiveContainer>
         <div style={{ fontFamily: window.sans, color: window.C.textMuted, fontSize: 11, marginTop: 10, paddingTop: 10, borderTop: `1px solid ${window.C.border}`, lineHeight: 1.6 }}>
-          For every $1 out of fixed income since 2001, approximately $2.72 went to alternatives and $1.72 came from
-          reduced public equity. Post-2012 acceleration coincides with the prolonged low-yield environment.
+          AUM-weighted alternative share rose <span style={{ color: window.C.textPrimary }}>+{omegaGrowth} pp</span> from {fyFirst} to {fyLast}.
+          Post-2012 acceleration coincides with the prolonged low-yield environment.
         </div>
       </div>
 
-      {/* Sub-allocation strip */}
+      {/* Sub-allocation strip — sparklines built from real per-year SUB_ALLOC */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 20 }}>
         {[
-          { key: 'realAssets',    label: 'Real Assets',    color: window.C.green,  s: '4%', e: '12%' },
-          { key: 'privateEquity', label: 'Private Equity', color: window.C.purple, s: '4%', e: '10%' },
-          { key: 'hedgeFunds',    label: 'Hedge Funds',    color: window.C.sky,    s: '0%', e: '6%'  },
-        ].map(({ key, label, color, s, e }) => (
-          <div key={key} style={{ background: window.C.card, border: `1px solid ${window.C.border}`, padding: '14px 16px' }}>
-            <div style={{ fontFamily: window.mono, color: window.C.textMuted, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>{label} — share of total AUM</div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
-              <span style={{ fontFamily: window.mono, color: window.C.textMuted, fontSize: 12 }}>{s}</span>
-              <span style={{ fontFamily: window.mono, color: color, fontSize: 18, fontWeight: 600 }}>{e}</span>
+          { key: 'realAssets',    label: 'Real Assets',    color: window.C.green  },
+          { key: 'privateEquity', label: 'Private Equity', color: window.C.purple },
+          { key: 'hedgeFunds',    label: 'Hedge Funds',    color: window.C.sky    },
+        ].map(({ key, label, color }) => {
+          const series = SUB_ALLOC[key];
+          const startVal = series[0];
+          const endVal   = series[series.length - 1];
+          return (
+            <div key={key} style={{ background: window.C.card, border: `1px solid ${window.C.border}`, padding: '14px 16px' }}>
+              <div style={{ fontFamily: window.mono, color: window.C.textMuted, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>{label} — share of total AUM</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+                <span style={{ fontFamily: window.mono, color: window.C.textMuted, fontSize: 12 }}>{startVal.toFixed(1)}%</span>
+                <span style={{ fontFamily: window.mono, color: color, fontSize: 18, fontWeight: 600 }}>{endVal.toFixed(1)}%</span>
+              </div>
+              <ResponsiveContainer width="100%" height={44}>
+                <AreaChart data={subAllocData} margin={{ top: 2, right: 0, bottom: 0, left: 0 }}>
+                  <defs>
+                    <linearGradient id={`sg${key}`} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%"  stopColor={color} stopOpacity={0.3} />
+                      <stop offset="95%" stopColor={color} stopOpacity={0.02} />
+                    </linearGradient>
+                  </defs>
+                  <Area type="monotone" dataKey={key} stroke={color} strokeWidth={1.5} fill={`url(#sg${key})`} dot={false} />
+                </AreaChart>
+              </ResponsiveContainer>
             </div>
-            <ResponsiveContainer width="100%" height={44}>
-              <AreaChart data={subAllocData} margin={{ top: 2, right: 0, bottom: 0, left: 0 }}>
-                <defs>
-                  <linearGradient id={`sg${key}`} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor={color} stopOpacity={0.3} />
-                    <stop offset="95%" stopColor={color} stopOpacity={0.02} />
-                  </linearGradient>
-                </defs>
-                <Area type="monotone" dataKey={key} stroke={color} strokeWidth={1.5} fill={`url(#sg${key})`} dot={false} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* KPI strip */}
       <div style={{ display: 'flex', gap: 14, marginBottom: 32 }}>
         <window.KPITile
-          label="Sample AUM (2021)"
-          value={window.dollars(TOTAL_AUM)}
-          sub={`${SYSTEM_COUNT} systems · 94% of U.S. public pension assets`}
+          label={`Sample AUM (${fyLast})`}
+          value={window.dollars(TOTAL_AUM_EXACT)}
+          sub={`${SYSTEM_COUNT} systems in the panel`}
           accent={window.C.blue}
         />
         <window.KPITile
           label="System-Years"
-          value="~3,128"
-          sub={`${SYSTEM_COUNT} systems × FY 2001–2021 balanced panel`}
+          value={ANALYTIC_OBS.toLocaleString()}
+          sub={`${SYSTEM_COUNT} systems × FY ${fyFirst}–${fyLast} balanced panel`}
           accent={window.C.sky}
         />
         <window.KPITile
           label="Omega Growth"
           value={`+${omegaGrowth}pp`}
-          sub={`${omegaStart.toFixed(1)}% (2001) → ${omegaEnd.toFixed(1)}% (2021)`}
+          sub={`${omegaStart.toFixed(1)}% (${fyFirst}) → ${omegaEnd.toFixed(1)}% (${fyLast})`}
           accent={window.C.green}
         />
         <window.KPITile
           label="Consultants"
           value={String(CONSULTANT_COUNT)}
-          sub="Distinct investment advisors in PPD sample"
+          sub="Distinct general investment consultants in panel"
           accent={window.C.purple}
         />
       </div>
@@ -172,8 +183,7 @@ function LandingPage({ navigate }) {
       <div style={{ paddingTop: 18, borderTop: `1px solid ${window.C.border}`, fontFamily: window.sans, color: window.C.textMuted, fontSize: 11, lineHeight: 1.8 }}>
         Data: <span style={{ color: window.C.textPrimary }}>Public Plans Database</span> (Center for Retirement Research, Boston College) ·
         Research: <span style={{ color: window.C.textPrimary }}>Begenau, Liang &amp; Siriwardane (2026)</span>, <em>The Rise of Alternatives</em>, <em>Review of Financial Studies</em> ·
-        Consultant data: Andonov, Bonetti &amp; Stefanescu (2025) ·
-        <span style={{ color: window.C.textMuted, opacity: 0.7 }}> All values are synthetic mock data calibrated to paper-reported statistics.</span>
+        Consultant data: Andonov, Bonetti &amp; Stefanescu (2025).
       </div>
     </div>
   );

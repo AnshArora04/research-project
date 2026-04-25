@@ -1,6 +1,6 @@
 # Research Project: U.S. Public Pension Fund Data Pipeline & Replication
 
-This repository builds a Python-based data pipeline for the [Public Plans Data](https://publicplansdata.org/public-plans-database/download-full-data-set/) (PPD) from the Center for Retirement Research at Boston College, and replicates key results from Begenau, Liang, and Siriwardane (2026), *"The Rise of Alternatives."*
+This repository builds a Python-based data pipeline for the [Public Plans Data](https://publicplansdata.org/public-plans-database/download-full-data-set/) (PPD) from the Center for Retirement Research at Boston College, replicates key results from Begenau, Liang, and Siriwardane (2026) *"The Rise of Alternatives,"* and ships an interactive web dashboard (`./run.sh` → http://localhost:8000) that surfaces the cleaned panel for ad-hoc exploration.
 
 ## Credits & Attribution
 
@@ -117,11 +117,73 @@ The `InvestmentReturn_1yr` variable in the PPD does not distinguish between gros
 
 ---
 
+## Web Dashboard (`web/`)
+
+An interactive dashboard for exploring the cleaned panel. Built as a verbatim React/HTML prototype delivered by the Claude design tool, then wired to **real PPD data** baked from `output_python/ppd_plan_level_clean.parquet`.
+
+### Quick start
+
+```sh
+./run.sh                  # bakes data → ppd-data.js, then serves on :8000
+PORT=8080 ./run.sh        # custom port
+SKIP_BAKE=1 ./run.sh      # skip bake on restart
+```
+
+Open <http://localhost:8000>.
+
+### What it shows (all from real data, no synthetic values)
+
+- **Overview** — AUM-weighted aggregate omega chart, sub-allocation sparklines (Real Assets, PE, HF), KPI strip (sample AUM, system-years, omega growth, # consultants).
+- **System Deep Dive** — Search-as-you-type selector grouped by state across all 174 systems; per-fund allocation, omega-vs-peer, funded ratio + ARR, and annual returns.
+- **Consultant Analysis** — Ranked dropdown of advisors by client AUM; metric comparison vs. all-system average; client distribution and per-client table.
+- **State & Regional** — Mode toggle: rank all 51 states by latest-year omega, or compare a hand-picked set over time.
+- **Methodology** — Numbered reference doc with definitions and provenance — every figure (system count, AUM total, ω range, ARR endpoints, top-4 consultants) is interpolated from the bake.
+
+### How it works
+
+```
+output_python/ppd_plan_level_clean.parquet
+        │
+        │   load_plan_clean() / cached_system_year() / cached_consultant_year() / cached_state_year()
+        ▼
+web/bake_data.py     ─emits→     web/static/ppd-data.js   (window.PPDData)
+                                          │
+                                          │  loaded by  <script src="/static/ppd-data.js">
+                                          ▼
+web/server.py (FastAPI)  ─serves→  web/static/index.html + .jsx  (React + Recharts via CDN)
+```
+
+- `web/bake_data.py` reuses the existing data layer (`dashboard/lib/`) and writes a single 2 MB JSON-in-JS file — the React app reads it from `window.PPDData` exactly like the original prototype's mock did.
+- `web/server.py` is ~50 lines: FastAPI + a `NoCacheStaticFiles` mount that disables browser caching (Babel transpiles JSX in-browser and would otherwise cache aggressively).
+- Numbers verified against parquet: 9,376/9,376 system-year × field cross-checks pass exactly; `ANALYTIC_OBS = 3,128` matches the paper's reported sample size to the row.
+
+### Files
+
+```
+web/
+├── bake_data.py        # parquet → ppd-data.js (run at server start)
+├── server.py           # FastAPI app, no-cache static serve
+├── __init__.py
+└── static/
+    ├── index.html      # entry HTML (loads React + Recharts via CDN)
+    ├── ppd-data.js     # AUTO-GENERATED real-data bundle
+    ├── ppd-shared.jsx  # shared components (KPITile, ChartShell, …)
+    ├── ppd-landing.jsx
+    ├── ppd-system.jsx
+    ├── ppd-consultant.jsx
+    ├── ppd-state.jsx
+    └── ppd-app.jsx     # app shell + Methodology page
+```
+
+The original Streamlit dashboard is preserved under `legacy/` (run with `cd legacy && ../.venv/bin/streamlit run streamlit_app.py`).
+
+---
+
 ## Repository Structure
 
 ```
 research-project/
-├── notebooks/
+├── notebooks/                              # Pipeline + replication notebooks
 │   ├── 01_create_mapping_table.ipynb     # Step 1: Plan-to-system mapping
 │   ├── 02_create_ppd_dta.ipynb           # Step 2: Import + merge PPD
 │   ├── 03_adjust_allocations.ipynb       # Step 3: Allocation corrections + IA fixes
@@ -131,21 +193,39 @@ research-project/
 │   ├── audit_steps_1_4.ipynb             # Pipeline audit (Steps 1–4)
 │   └── Begenau replication work/
 │       ├── replicate_table1_figure2.ipynb # Main replication notebook (Sections 1–8)
-│       ├── figure_2.png                   # Figure 2 (baseline)
-│       ├── figure_2_paper_faithful.png    # Figure 2 (paper-faithful)
-│       └── table_1.csv                    # Table 1 output
-├── output_python/                         # Pipeline outputs (CSV + DTA + Parquet)
-├── raw/                                   # Source data
+│       ├── figure_2.png
+│       ├── figure_2_paper_faithful.png
+│       └── table_1.csv
+├── dashboard/lib/                          # Shared Python data layer (used by web/ and legacy/)
+│   ├── data_loader.py                    # load_plan_clean, get_systems, get_consultants…
+│   ├── aggregations.py                   # cached_system_year, _consultant_year, _state_year
+│   ├── config.py                         # data root + file path resolution
+│   ├── charts.py                         # Plotly chart builders (Streamlit-only)
+│   └── ui.py                             # Streamlit theme + CSS (Streamlit-only)
+├── web/                                    # React/HTML dashboard (current)
+│   ├── server.py                         # FastAPI server + no-cache static mount
+│   ├── bake_data.py                      # Parquet → ppd-data.js
+│   └── static/                           # Verbatim design files + baked data bundle
+├── legacy/                                 # Streamlit dashboard (kept as backup)
+│   ├── streamlit_app.py
+│   ├── pages/
+│   ├── .streamlit/config.toml
+│   └── README.md
+├── output_python/                          # Pipeline outputs (CSV + DTA + Parquet)
+├── raw/                                    # Source data
 │   ├── ppd-data-2023-07-28.csv           # PPD 2023-07-28 release (used in paper)
 │   ├── ppd-data-2024-12-08.csv           # PPD 2024-12-08 release (newer)
-│   ├── general_consultants_final.dta     # Hand-collected consultant data
-│   ├── mapping_table_final.xlsx          # Hand-collected plan-to-system mapping
+│   ├── general_consultants_final.dta
+│   ├── mapping_table_final.xlsx
 │   ├── us_census_bureau_regions_and_divisions.csv
 │   ├── zipcodes.csv
-│   └── allocation_adjustments/           # CAFR source documents for adjustments
-├── BegenauEtAl2026RFS.pdf                # Published paper
-├── BegenauEtAl2026_machine_readable.md   # Machine-readable paper summary
-└── BegenauEtAl2026_InternetAppendix_machine_readable.md
+│   └── allocation_adjustments/
+├── DESIGN_BRIEF.md                         # Original design brief (historical)
+├── BegenauEtAl2026RFS.pdf                  # Published paper
+├── BegenauEtAl2026_machine_readable.md
+├── BegenauEtAl2026_InternetAppendix_machine_readable.md
+├── requirements.txt                        # pandas, fastapi, uvicorn, streamlit, plotly…
+└── run.sh                                  # bake + serve web dashboard
 ```
 
 ---

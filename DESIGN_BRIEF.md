@@ -1,5 +1,29 @@
 # PPD Explorer — Design Brief for Redesign
 
+> **Status (2026-04-25):** the redesign described below has been delivered as a
+> verbatim React/HTML build under [`web/`](web/), served by FastAPI via
+> [`./run.sh`](run.sh). The original Streamlit dashboard is preserved under
+> [`legacy/`](legacy/) as a backup. This brief is kept verbatim as the
+> source-of-design-intent that drove the rebuild — every problem listed in the
+> "What's Wrong Right Now" section has been addressed in the new build.
+>
+> What changed vs. the brief:
+> - The brief assumed the redesign would stay in Streamlit. It didn't —
+>   Streamlit's chrome made the design's custom 220-px sidebar, search-as-you-
+>   type dropdown, and floating tweaks panel unreachable. The bundled
+>   React/HTML prototype is now served verbatim and fed real PPD data via
+>   `web/bake_data.py`.
+> - System count in this brief reads "174" — the `web/` build also exposes 174
+>   (PPD raw); the paper trims to 159 via filters 5+7. This is documented in
+>   the in-app Methodology page.
+> - The `web/` Methodology page interpolates every numeric claim from the
+>   bake (system count, ω range, ARR endpoints, top-4 consultants by AUM,
+>   total AUM in latest fiscal year). Nothing is hardcoded.
+>
+> See [README.md](README.md) → "Web Dashboard" for the implementation overview.
+
+---
+
 ## What is this?
 
 An interactive research dashboard for exploring U.S. public pension fund data from the paper **"The Rise of Alternatives"** by Begenau, Liang & Siriwardane (2026, Review of Financial Studies). Primary users are academic researchers and finance PhD students — people who understand what "omega" and "GASB" mean but who have never heard of Streamlit.

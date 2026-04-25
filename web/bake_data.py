@@ -96,6 +96,29 @@ def bake() -> dict:
         for i, y in enumerate(YEARS)
     ]
 
+    # Per-year sub-allocation aggregates (AUM-weighted, % of total AUM)
+    # Used by the landing-page sub-allocation sparkline strip.
+    SUB_ALLOC = {
+        "realAssets":    wavg_by_year(sys_df, "RETotal_Trgt", YEARS),
+        "privateEquity": wavg_by_year(sys_df, "PETotal_Trgt", YEARS),
+        "hedgeFunds":    wavg_by_year(sys_df, "HFTotal_Trgt", YEARS),
+    }
+
+    # AUM-weighted assumed-return endpoints (used in Methodology page)
+    ARR_TREND = {
+        "firstFy":    YEARS[0],
+        "firstValue": wavg_by_year(sys_df, "InvestmentReturnAssumption_GASB", [YEARS[0]])[0],
+        "lastFy":     YEARS[-1],
+        "lastValue":  wavg_by_year(sys_df, "InvestmentReturnAssumption_GASB", [YEARS[-1]])[0],
+    }
+
+    # Omega range across the panel (used in Methodology page)
+    omega_vals = sys_df["omega"].dropna()
+    OMEGA_RANGE = {
+        "min": round(float(omega_vals.min()) * 100, 1),
+        "max": round(float(omega_vals.max()) * 100, 1),
+    }
+
     # ── SYSTEMS ────────────────────────────────────────────────────────────────
     sys_by_id = {row.pub_id: row for row in systems_meta.itertuples()}
 
@@ -230,18 +253,35 @@ def bake() -> dict:
     TOTAL_AUM = round(sum(s["aumB"] for s in SYSTEMS) / 100) * 100  # to nearest 100B
     SYSTEM_COUNT = len(SYSTEMS)
     CONSULTANT_COUNT = len(consultants_meta)
+    TOTAL_AUM_EXACT = round(sum(s["aumB"] for s in SYSTEMS), 1)  # exact billion sum
+
+    # Count of system-years with non-zero target allocations (the analytic sample
+    # size — paper reports ≈3,128 such observations).
+    ANALYTIC_OBS = sum(
+        1 for s in SYSTEMS for y in s["years"]
+        if sum(y["allocation"].values()) > 0
+    )
+
+    # Top-4 consultants by total client AUM (used in Methodology body)
+    TOP_CONSULTANTS = [c["name"] for c in CONSULTANTS[:4]]
 
     return {
         "SYSTEMS": SYSTEMS,
         "CONSULTANTS": CONSULTANTS,
         "STATES": STATES,
         "LANDING_DATA": LANDING_DATA,
+        "SUB_ALLOC": SUB_ALLOC,
         "YEARS": YEARS,
         "AGG_OMEGA": AGG_OMEGA,
         "AGG_FUNDED": AGG_FUNDED,
         "TOTAL_AUM": TOTAL_AUM,
+        "TOTAL_AUM_EXACT": TOTAL_AUM_EXACT,
         "SYSTEM_COUNT": SYSTEM_COUNT,
         "CONSULTANT_COUNT": CONSULTANT_COUNT,
+        "ANALYTIC_OBS": ANALYTIC_OBS,
+        "ARR_TREND": ARR_TREND,
+        "OMEGA_RANGE": OMEGA_RANGE,
+        "TOP_CONSULTANTS": TOP_CONSULTANTS,
     }
 
 
