@@ -24,22 +24,27 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 # ── Theme tokens ───────────────────────────────────────────────────────────────
-_BG      = "#0C0E12"
-_SURFACE = "#131720"
-_BORDER  = "#1F2636"
-_GRID    = "#1A2030"
-_TEXT    = "#D6DCE8"
-_MUTED   = "#5A6480"
-_AMBER   = "#C68B20"
-_AMBER_F = "rgba(198,139,32,0.18)"
-_BLUE    = "#4A8DF5"
-_GREEN   = "#3DAD6E"
-_RED     = "#E05252"
-_TEAL    = "#17BECF"
+_BG      = "#080C14"
+_SURFACE = "#0D1526"
+_CARD    = "#111D35"
+_BORDER  = "#1E3254"
+_GRID    = "#162543"
+_TEXT    = "#E2EAF4"
+_MUTED   = "#7A9BBF"
+_BLUE    = "#3B82F6"
+_BLUE_F  = "rgba(59,130,246,0.18)"
+_SKY     = "#38BDF8"
+_GREEN   = "#34D399"
+_RED     = "#F87171"
+_PURPLE  = "#A78BFA"
+_ORANGE  = "#FB923C"
+# Legacy alias kept so any straggler reference doesn't break
+_AMBER   = _BLUE
+_AMBER_F = _BLUE_F
 
 # Colour palette for multi-series (states, consultants, etc.)
-_PALETTE = [_AMBER, _BLUE, _GREEN, _RED, _TEAL,
-            "#A855F7", "#F97316", "#06B6D4", "#84CC16", "#EC4899"]
+_PALETTE = [_BLUE, _SKY, _GREEN, _RED, _PURPLE, _ORANGE,
+            "#06B6D4", "#84CC16", "#EC4899", "#A855F7"]
 
 _FONT = dict(family="IBM Plex Mono, monospace", color=_TEXT, size=11)
 
@@ -76,7 +81,7 @@ _LAYOUT_BASE = dict(
         bordercolor=_BORDER,
         font=dict(family="IBM Plex Mono, monospace", size=11),
     ),
-    modebar=dict(bgcolor="rgba(0,0,0,0)", color=_MUTED, activecolor=_AMBER),
+    modebar=dict(bgcolor="rgba(0,0,0,0)", color=_MUTED, activecolor=_BLUE),
 )
 
 
@@ -107,10 +112,10 @@ def allocation_area(sys_df: pd.DataFrame, pub_id: str) -> go.Figure:
     fig = _base_fig(title=dict(text="Target Allocation", font=dict(size=13, color=_TEXT), x=0))
 
     shared = dict(mode="lines", stackgroup="one", line=dict(width=0))
-    fig.add_trace(go.Scatter(x=fy, y=alts,  name="Alternatives", fillcolor="rgba(198,139,32,0.8)",  **shared))
-    fig.add_trace(go.Scatter(x=fy, y=eq,    name="Public Equity", fillcolor="rgba(74,141,245,0.75)", **shared))
-    fig.add_trace(go.Scatter(x=fy, y=fi,    name="Fixed Income",  fillcolor="rgba(61,173,110,0.65)", **shared))
-    fig.add_trace(go.Scatter(x=fy, y=other, name="Other",         fillcolor="rgba(90,100,128,0.4)",  **shared))
+    fig.add_trace(go.Scatter(x=fy, y=alts,  name="Alternatives",  fillcolor="rgba(167,139,250,0.78)", **shared))
+    fig.add_trace(go.Scatter(x=fy, y=eq,    name="Public Equity", fillcolor="rgba(59,130,246,0.78)",  **shared))
+    fig.add_trace(go.Scatter(x=fy, y=fi,    name="Fixed Income",  fillcolor="rgba(56,189,248,0.62)",  **shared))
+    fig.add_trace(go.Scatter(x=fy, y=other, name="Other",         fillcolor="rgba(122,155,191,0.32)", **shared))
 
     fig.update_layout(
         yaxis=dict(tickformat=".0%", range=[0, 1.02], **{k: v for k, v in _LAYOUT_BASE["yaxis"].items() if k != "tickformat"}),
@@ -152,8 +157,8 @@ def omega_trend(
         x=fy_s, y=ω_s,
         name=sel["pub_system_name"].iloc[0] if len(sel) else pub_id,
         mode="lines+markers",
-        line=dict(color=_AMBER, width=2.5),
-        marker=dict(size=5, color=_AMBER),
+        line=dict(color=_BLUE, width=2.5),
+        marker=dict(size=5, color=_BLUE),
         hovertemplate="%{y:.1%}<extra>This system</extra>",
     ))
 
@@ -173,7 +178,7 @@ def funding_trend(sys_df: pd.DataFrame, pub_id: str) -> go.Figure:
         x=fy, y=sel["ActFundedRatio_GASB"],
         name="Funded Ratio (GASB 25)",
         mode="lines+markers",
-        line=dict(color=_BLUE, width=2.5),
+        line=dict(color=_SKY, width=2.5),
         marker=dict(size=5),
         hovertemplate="%{y:.1%}<extra>Funded ratio</extra>",
     ), secondary_y=False)
@@ -182,7 +187,7 @@ def funding_trend(sys_df: pd.DataFrame, pub_id: str) -> go.Figure:
         x=fy, y=sel["InvestmentReturnAssumption_GASB"],
         name="Assumed Return",
         mode="lines+markers",
-        line=dict(color=_AMBER, width=2, dash="dash"),
+        line=dict(color=_PURPLE, width=2, dash="dash"),
         marker=dict(size=4, symbol="diamond"),
         hovertemplate="%{y:.2%}<extra>Assumed return</extra>",
     ), secondary_y=True)
@@ -232,8 +237,8 @@ def consultant_trend(cons_df: pd.DataFrame, consultant_id) -> go.Figure:
     fig.add_trace(go.Bar(
         x=fy, y=sel["n_systems"],
         name="Client systems",
-        marker_color=_AMBER_F,
-        marker_line_color=_AMBER,
+        marker_color=_BLUE_F,
+        marker_line_color=_BLUE,
         marker_line_width=1.2,
         hovertemplate="%{y:.0f} clients<extra></extra>",
     ), secondary_y=False)
@@ -293,7 +298,7 @@ def consultant_metric_trend(
         x=sel["fy"].astype(int), y=sel[metric],
         name=name,
         mode="lines+markers",
-        line=dict(color=_AMBER, width=2.5),
+        line=dict(color=_BLUE, width=2.5),
         marker=dict(size=5),
         hovertemplate="%{y:.2%}<extra>" + name + "</extra>",
     ))
@@ -358,7 +363,7 @@ def state_ranking(
     )
 
     colors = [
-        f"rgba(198,139,32,{0.4 + 0.6 * i / max(len(snap) - 1, 1):.2f})"
+        f"rgba(59,130,246,{0.35 + 0.6 * i / max(len(snap) - 1, 1):.2f})"
         for i in range(len(snap))
     ]
 
@@ -435,7 +440,7 @@ def scatter_omega_funding(state_df: pd.DataFrame, fy: int) -> go.Figure:
         marker=dict(
             size=marker_size,
             color=snap["omega"],
-            colorscale=[[0, _BLUE], [1, _AMBER]],
+            colorscale=[[0, _SKY], [1, _PURPLE]],
             line=dict(color=_BORDER, width=0.5),
             opacity=0.85,
         ),
@@ -451,6 +456,72 @@ def scatter_omega_funding(state_df: pd.DataFrame, fy: int) -> go.Figure:
     fig.update_xaxes(tickformat=".0%", title_text="Omega", title_font=dict(size=10))
     fig.update_yaxes(tickformat=".0%", title_text="Funded Ratio", title_font=dict(size=10))
     return fig
+
+
+# ── Landing-page charts ────────────────────────────────────────────────────────
+
+def aggregate_omega_hero(sys_df: pd.DataFrame) -> go.Figure:
+    """AUM-weighted aggregate omega over time — landing hero (Figure 2c shape)."""
+    series = (
+        sys_df.groupby("fy", observed=True)
+        .apply(lambda g: _wavg_scalar(g, "omega", "MktAssets_net"), include_groups=False)
+        .reset_index(name="omega")
+        .dropna()
+        .sort_values("fy")
+    )
+    fy = series["fy"].astype(int)
+
+    fig = _base_fig(margin=dict(l=10, r=10, t=10, b=10), height=240)
+    fig.add_trace(go.Scatter(
+        x=fy, y=series["omega"],
+        mode="lines",
+        line=dict(color=_BLUE, width=2.5, shape="spline"),
+        fill="tozeroy",
+        fillcolor="rgba(59,130,246,0.18)",
+        hovertemplate="FY %{x}: %{y:.1%}<extra></extra>",
+        name="Aggregate ω",
+    ))
+    fig.add_vline(x=2012, line=dict(color=_BORDER, width=1, dash="dash"),
+                  annotation_text="low-yield era begins",
+                  annotation_position="top right",
+                  annotation_font=dict(color=_MUTED, size=9, family="IBM Plex Mono, monospace"))
+    fig.update_yaxes(tickformat=".0%", rangemode="tozero")
+    fig.update_layout(showlegend=False, hovermode="x unified")
+    return fig
+
+
+def sparkline(sys_df: pd.DataFrame, col: str, color: str = _GREEN) -> go.Figure:
+    """Tiny area sparkline of an AUM-weighted aggregate over time."""
+    series = (
+        sys_df.groupby("fy", observed=True)
+        .apply(lambda g: _wavg_scalar(g, col, "MktAssets_net"), include_groups=False)
+        .reset_index(name="v")
+        .dropna()
+        .sort_values("fy")
+    )
+    fig = go.Figure(layout=go.Layout(
+        paper_bgcolor=_CARD,
+        plot_bgcolor=_CARD,
+        margin=dict(l=0, r=0, t=2, b=0),
+        height=44,
+        xaxis=dict(visible=False),
+        yaxis=dict(visible=False),
+        showlegend=False,
+    ))
+    fig.add_trace(go.Scatter(
+        x=series["fy"], y=series["v"],
+        mode="lines",
+        line=dict(color=color, width=1.6, shape="spline"),
+        fill="tozeroy",
+        fillcolor=f"rgba({_hex_to_rgb(color)},0.28)",
+        hoverinfo="skip",
+    ))
+    return fig
+
+
+def _hex_to_rgb(hx: str) -> str:
+    h = hx.lstrip("#")
+    return f"{int(h[0:2],16)},{int(h[2:4],16)},{int(h[4:6],16)}"
 
 
 # ── Internal helpers ───────────────────────────────────────────────────────────

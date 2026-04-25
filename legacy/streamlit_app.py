@@ -12,15 +12,19 @@ from pathlib import Path
 import streamlit as st
 
 # Ensure dashboard/ is importable regardless of working directory.
-sys.path.insert(0, str(Path(__file__).parent / "dashboard"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "dashboard"))
 
-from lib.config import DATA_FILES, check_data_availability, get_data_root
+from lib import aggregations as agg
+from lib.charts import aggregate_omega_hero, sparkline, _GREEN, _PURPLE, _SKY
 from lib.data_loader import get_consultants, get_states, get_systems, load_plan_clean
-from lib.ui import ATTRIBUTION_HTML, apply_theme
+from lib.ui import (
+    ATTRIBUTION_HTML, apply_theme, hero_card_close, hero_card_open,
+    kpi_grid, page_header, section,
+)
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Public Pension Data Explorer",
+    page_title="PPD Explorer — The Rise of Alternatives",
     page_icon="◈",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -28,134 +32,169 @@ st.set_page_config(
 apply_theme()
 
 # ── Load data (cached) ────────────────────────────────────────────────────────
+df       = load_plan_clean()
+sys_df   = agg.cached_system_year(df)
+
 @st.cache_data(show_spinner=False)
-def _get_summaries():
-    df        = load_plan_clean()
-    systems   = get_systems(df)
+def _summaries():
+    systems     = get_systems(df)
     consultants = get_consultants(df)
-    states    = get_states(df)
-    return df["fy"].min(), df["fy"].max(), len(systems), len(consultants), len(states)
+    states      = get_states(df)
+    return (
+        int(df["fy"].min()),
+        int(df["fy"].max()),
+        int(len(systems)),
+        int(len(consultants)),
+        int(len(states)),
+    )
 
-fy_min, fy_max, n_sys, n_cons, n_states = _get_summaries()
+fy_min, fy_max, n_sys, n_cons, n_states = _summaries()
 
-# ── Data root status ──────────────────────────────────────────────────────────
-data_root   = get_data_root()
-availability = check_data_availability()
-n_ok        = sum(availability.values())
-n_total     = len(availability)
-all_ok      = n_ok == n_total
-dot_cls     = "dot-ok" if all_ok else ("dot-warn" if n_ok > 0 else "dot-err")
-status_text = "All files ready" if all_ok else f"{n_ok} / {n_total} files found"
+# Aggregate omega (AUM-weighted) for headline numbers
+@st.cache_data(show_spinner=False)
+def _omega_endpoints():
+    s = (
+        sys_df.dropna(subset=["omega"])
+        .groupby("fy", observed=True)
+        .apply(lambda g: (g["omega"] * g["MktAssets_net"].fillna(0)).sum()
+                          / max(g["MktAssets_net"].fillna(0).sum(), 1.0),
+               include_groups=False)
+        .reset_index(name="omega").sort_values("fy")
+    )
+    return float(s["omega"].iloc[0]), float(s["omega"].iloc[-1])
+
+omega_start, omega_end = _omega_endpoints()
+omega_growth_pp = (omega_end - omega_start) * 100
+
+# AUM 2021
+@st.cache_data(show_spinner=False)
+def _latest_aum():
+    latest = sys_df[sys_df["fy"] == fy_max]
+    total = float(latest["MktAssets_net"].sum())
+    return total
+
+total_aum = _latest_aum()
+aum_str = (
+    f"${total_aum/1e12:.1f}T" if total_aum >= 1e12
+    else f"${total_aum/1e9:.0f}B"
+)
 
 # ── Header ────────────────────────────────────────────────────────────────────
-st.markdown(
-    """
-<p class="ppd-eyebrow">◈ &nbsp;Research Tool &nbsp;·&nbsp; Begenau, Liang &amp; Siriwardane (2026)</p>
-<h1 class="ppd-title">American Public<br>Pension Explorer</h1>
-<p class="ppd-lead">
-  Interactive analytics for U.S. public defined-benefit pension funds.
-  Explore asset allocation trends, funding trajectories, consultant
-  relationships, and state-level comparisons across the 2001–2021 sample.
-</p>
-<hr class="ppd-rule" />
-""",
-    unsafe_allow_html=True,
+page_header(
+    eyebrow="◈ &nbsp;Research Tool &nbsp;·&nbsp; Begenau, Liang &amp; Siriwardane (2026, RFS)",
+    title="American Public<br>Pension Explorer",
+    lead=(
+        f"U.S. public defined-benefit pension funds steadily shifted their risky portfolios "
+        f"toward alternatives over {fy_min}–{fy_max}. Explore that transformation across "
+        f"{n_sys} systems — allocation trends, funding trajectories, consultant "
+        f"relationships, and state-level comparisons."
+    ),
+    hero=True,
 )
 
-# ── Navigation cards ──────────────────────────────────────────────────────────
-col1, col2, col3 = st.columns(3, gap="medium")
-
-with col1:
-    st.markdown(
-        """
-<div class="nav-card">
-  <span class="nav-card-badge">◉ &nbsp;01 &nbsp;·&nbsp; System View</span>
-  <div class="nav-card-title">System / Pension</div>
-  <p class="nav-card-body">
-    Drill into any pension system. Track omega (alt share within risky), total
-    risky allocation, funding ratio, and net returns from 2001 to 2021.
-    Compare against peer medians by state, region, or size tier.
-  </p>
-  <div class="nav-card-tags">
-    <span class="tag">159 systems</span>
-    <span class="tag">time-series</span>
-    <span class="tag">peer bands</span>
-  </div>
-</div>""",
-        unsafe_allow_html=True,
-    )
-    st.page_link("pages/1_System_or_Pension.py", label="Open System Explorer →")
-
-with col2:
-    st.markdown(
-        """
-<div class="nav-card">
-  <span class="nav-card-badge">◉ &nbsp;02 &nbsp;·&nbsp; Consultant View</span>
-  <div class="nav-card-title">Consultant</div>
-  <p class="nav-card-body">
-    Analyze investment consultants by client base, total AUM under advice, and
-    average client metrics. Trace how consultant relationships and portfolio
-    choices evolved across the sample period.
-  </p>
-  <div class="nav-card-tags">
-    <span class="tag">57 consultants</span>
-    <span class="tag">client metrics</span>
-    <span class="tag">AUM-weighted</span>
-  </div>
-</div>""",
-        unsafe_allow_html=True,
-    )
-    st.page_link("pages/2_Consultant.py", label="Open Consultant Explorer →")
-
-with col3:
-    st.markdown(
-        """
-<div class="nav-card">
-  <span class="nav-card-badge">◉ &nbsp;03 &nbsp;·&nbsp; Geography View</span>
-  <div class="nav-card-title">State / Region</div>
-  <p class="nav-card-body">
-    Compare portfolio allocations and funding health across states and Census
-    regions. Rank by omega, funding ratio, or assumed return for any fiscal
-    year in the sample.
-  </p>
-  <div class="nav-card-tags">
-    <span class="tag">50 states</span>
-    <span class="tag">4 regions</span>
-    <span class="tag">rankings</span>
-  </div>
-</div>""",
-        unsafe_allow_html=True,
-    )
-    st.page_link("pages/3_State_or_Region.py", label="Open State Explorer →")
-
-# ── Status panel ──────────────────────────────────────────────────────────────
-st.markdown('<hr class="ppd-rule" />', unsafe_allow_html=True)
-
-st.markdown(
-    f"""
-<div class="status-panel">
-  <div class="status-item">
-    <span class="status-label">Dataset Status</span>
-    <span class="status-value">
-      <span class="dot {dot_cls}"></span>{status_text}
-    </span>
-  </div>
-  <div class="status-item">
-    <span class="status-label">Data Root</span>
-    <span class="status-value">{data_root}</span>
-  </div>
-  <div class="status-item">
-    <span class="status-label">Sample Period</span>
-    <span class="status-value">FY {int(fy_min)} – {int(fy_max)}</span>
-  </div>
-  <div class="status-item">
-    <span class="status-label">Coverage</span>
-    <span class="status-value">~3,128 system-years &nbsp;·&nbsp; {n_sys} systems &nbsp;·&nbsp; {n_states} states</span>
-  </div>
-</div>
-""",
-    unsafe_allow_html=True,
+# ── Hero chart card ───────────────────────────────────────────────────────────
+hero_card_open(
+    title="Alternative-to-Risky Share (Omega, ω)",
+    sub=f"AUM-weighted aggregate, FY {fy_min}–{fy_max} &nbsp;·&nbsp; Figure 2c in paper",
+    stat_value=f"{omega_end*100:.1f}%",
+    stat_label=f"{fy_max} aggregate",
 )
+st.plotly_chart(aggregate_omega_hero(sys_df), use_container_width=True,
+                config={"displayModeBar": False})
+hero_card_close(
+    "For every $1 out of fixed income since 2001, approximately $2.72 went to alternatives "
+    "and $1.72 came from reduced public equity. Post-2012 acceleration coincides with the "
+    "prolonged low-yield environment."
+)
+
+# ── Sub-allocation strip (3 sparklines) ───────────────────────────────────────
+@st.cache_data(show_spinner=False)
+def _share_endpoints(col):
+    s = (
+        sys_df.dropna(subset=[col])
+        .groupby("fy", observed=True)
+        .apply(lambda g: (g[col] * g["MktAssets_net"].fillna(0)).sum()
+                          / max(g["MktAssets_net"].fillna(0).sum(), 1.0),
+               include_groups=False)
+        .reset_index(name="v").sort_values("fy")
+    )
+    if s.empty: return 0.0, 0.0
+    return float(s["v"].iloc[0]), float(s["v"].iloc[-1])
+
+sub_specs = [
+    ("RETotal_Trgt", "Real Assets",    _GREEN,  "green"),
+    ("PETotal_Trgt", "Private Equity", _PURPLE, "purple"),
+    ("HFTotal_Trgt", "Hedge Funds",    _SKY,    "sky"),
+]
+
+cols = st.columns(3, gap="small")
+for col_st, (col_name, label, hex_color, css_class) in zip(cols, sub_specs):
+    s_start, s_end = _share_endpoints(col_name) if col_name in sys_df.columns else (0.0, 0.0)
+    with col_st:
+        st.markdown(
+            f'''<div class="sub-card">
+  <div class="sub-card-label">{label} &mdash; share of total AUM</div>
+  <div class="sub-card-row">
+    <span class="sub-card-start">{s_start*100:.0f}%</span>
+    <span class="sub-card-end {css_class}">{s_end*100:.0f}%</span>
+  </div>''',
+            unsafe_allow_html=True,
+        )
+        if col_name in sys_df.columns:
+            st.plotly_chart(
+                sparkline(sys_df, col_name, hex_color),
+                use_container_width=True,
+                config={"displayModeBar": False, "staticPlot": True},
+            )
+        st.markdown("</div>", unsafe_allow_html=True)
+
+# ── KPI strip ─────────────────────────────────────────────────────────────────
+kpi_grid([
+    ("Sample AUM",
+     aum_str,
+     f"{n_sys} systems &middot; FY {fy_max} balance",
+     "blue"),
+    ("System-Years",
+     f"{len(sys_df):,}",
+     f"{n_sys} systems × FY {fy_min}–{fy_max} balanced panel",
+     "sky"),
+    ("Omega Growth",
+     f"+{omega_growth_pp:.1f}pp",
+     f"{omega_start*100:.1f}% ({fy_min}) → {omega_end*100:.1f}% ({fy_max})",
+     "green"),
+    ("Consultants",
+     str(n_cons),
+     "Distinct general investment consultants",
+     "purple"),
+])
+
+# ── Nav cards ─────────────────────────────────────────────────────────────────
+section("Explore the Data")
+
+nav = [
+    ("pages/1_System_or_Pension.py", "◉", "System Deep Dive",
+     f"Drill into any of {n_sys} funds — allocations, returns, funding trajectories, and peer comparison."),
+    ("pages/2_Consultant.py", "◈", "Consultant Analysis",
+     "Compare investment advisors by client AUM, count, and average alternative allocations."),
+    ("pages/3_State_or_Region.py", "◫", "State & Regional",
+     "Rank states by omega, compare funding health, and chart geographic adoption patterns."),
+    ("pages/4_Methodology.py", "≡", "Methodology",
+     "Variable definitions, sample construction, and data source documentation."),
+]
+
+for left, right in [(nav[0], nav[1]), (nav[2], nav[3])]:
+    c1, c2 = st.columns(2, gap="small")
+    for col_st, (page, icon, title, body) in zip((c1, c2), (left, right)):
+        with col_st:
+            st.markdown(
+                f'''<div class="nav-card">
+  <div class="nav-card-icon">{icon}</div>
+  <div class="nav-card-title">{title}</div>
+  <p class="nav-card-body">{body}</p>
+</div>''',
+                unsafe_allow_html=True,
+            )
+            st.page_link(page, label=f"Open {title} →")
 
 # ── Attribution ───────────────────────────────────────────────────────────────
 st.markdown(ATTRIBUTION_HTML, unsafe_allow_html=True)

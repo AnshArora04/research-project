@@ -1,5 +1,12 @@
-streamlit>=1.35.0
+# ── Core data + analytics (used by both web/ and legacy/) ────────────
 pandas>=2.0.0
 numpy>=1.24.0
-plotly>=5.18.0
 pyarrow>=14.0.0
+
+# ── Web app (web/server.py + web/bake_data.py) ───────────────────────
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+
+# ── Legacy Streamlit dashboard (legacy/) ─────────────────────────────
+streamlit>=1.35.0
+plotly>=5.18.0
