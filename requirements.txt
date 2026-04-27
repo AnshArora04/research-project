@@ -7,6 +7,11 @@ pyarrow>=14.0.0
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
 
+# ── Server-side regression / panel analysis (web/analysis.py) ────────
+statsmodels>=0.14
+linearmodels>=6.0
+scipy>=1.11
+
 # ── Legacy Streamlit dashboard (legacy/) ─────────────────────────────
 streamlit>=1.35.0
 plotly>=5.18.0

@@ -13,10 +13,21 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI
+from typing import Any
+
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 from starlette.types import Scope
+
+from web.analysis import (
+    get_variables,
+    run_correlation,
+    run_event_study,
+    run_ols,
+    run_univariate,
+)
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -55,3 +66,42 @@ def health() -> dict:
         "data_baked": data_js.exists(),
         "data_size_bytes": data_js.stat().st_size if data_js.exists() else 0,
     }
+
+
+@app.get("/api/analysis/variables", include_in_schema=False)
+def analysis_variables() -> list[dict]:
+    return get_variables()
+
+
+class RunRequest(BaseModel):
+    test: str
+    spec: dict[str, Any] = Field(default_factory=dict)
+
+
+@app.post("/api/analysis/run", include_in_schema=False)
+def analysis_run(req: RunRequest) -> dict:
+    spec = req.spec or {}
+    try:
+        if req.test == "univariate":
+            return run_univariate(y=spec.get("y"), group_by=spec.get("group_by"))
+        if req.test == "ols":
+            return run_ols(
+                y=spec.get("y"),
+                xs=spec.get("xs") or [],
+                controls=spec.get("controls") or [],
+                fe=spec.get("fe") or [],
+            )
+        if req.test == "event_study":
+            return run_event_study(
+                y=spec.get("y"),
+                group_a=spec.get("group_a") or {},
+                group_b=spec.get("group_b") or {},
+            )
+        if req.test == "correlation":
+            return run_correlation(
+                vars_list=spec.get("vars") or [],
+                scatter_pair=spec.get("scatter_pair"),
+            )
+        raise HTTPException(status_code=400, detail=f"Unknown test {req.test!r}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

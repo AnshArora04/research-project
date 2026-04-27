@@ -116,9 +116,10 @@ function App() {
     { id: 'consultant', label: 'Consultant Analysis', sub: 'Advisor comparison' },
     { id: 'state', label: 'State & Regional', sub: 'Geographic view' },
     { id: 'methodology', label: 'Methodology', sub: 'Data & definitions' },
+    { id: 'analysis', label: 'Analysis', sub: 'Run paper-style tests' },
   ];
 
-  const pages = { landing: LandingPage, system: SystemDeepDivePage, consultant: ConsultantPage, state: StateRegionalPage, methodology: MethodologyPage };
+  const pages = { landing: LandingPage, system: SystemDeepDivePage, consultant: ConsultantPage, state: StateRegionalPage, methodology: MethodologyPage, analysis: AnalysisPage };
   const PageComponent = pages[page] || LandingPage;
 
   return (
