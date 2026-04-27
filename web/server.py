@@ -24,7 +24,7 @@ from starlette.types import Scope
 from web.analysis import (
     get_variables,
     run_correlation,
-    run_event_study,
+    run_group_comparison,
     run_ols,
     run_univariate,
 )
@@ -90,9 +90,11 @@ def analysis_run(req: RunRequest) -> dict:
                 xs=spec.get("xs") or [],
                 controls=spec.get("controls") or [],
                 fe=spec.get("fe") or [],
+                weights=spec.get("weights") or "equal",
+                cluster=spec.get("cluster") or "entity",
             )
-        if req.test == "event_study":
-            return run_event_study(
+        if req.test == "group_comparison":
+            return run_group_comparison(
                 y=spec.get("y"),
                 group_a=spec.get("group_a") or {},
                 group_b=spec.get("group_b") or {},

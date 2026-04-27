@@ -1,24 +1,47 @@
 # Research Project: U.S. Public Pension Fund Data Pipeline, Replication, and Dashboard
 
-A Python implementation of the [Public Plans Database (PPD)](https://publicplansdata.org/public-plans-database/download-full-data-set/) cleaning pipeline (Center for Retirement Research, Boston College), a full replication of key tables and figures from **Begenau, Liang & Siriwardane (2026, *Review of Financial Studies*)** *"The Rise of Alternatives,"* and an interactive web dashboard (`./run.sh` → http://localhost:8000) that surfaces the cleaned panel for exploratory research.
+## Run the website
 
-## Quick Start
+Three commands, then open the URL:
 
 ```sh
-# 1. Clone and create a venv
-git clone <this repo>
+git clone https://github.com/AnshArora04/research-project.git
 cd research-project
-python3 -m venv .venv
+python3.11 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-
-# 2. Run the web dashboard (bakes data → serves on :8000)
 ./run.sh
-
-# 3. Optional: run the pipeline notebooks
-.venv/bin/jupyter lab notebooks/
 ```
 
-Open <http://localhost:8000> for the dashboard. To rebuild the parquet outputs, execute `notebooks/01_create_mapping_table.ipynb` through `notebooks/05_clean_ppd.ipynb` in order — outputs land in `output_python/`.
+Then open **<http://localhost:8000>**.
+
+The cleaned PPD parquet (`output_python/ppd_plan_level_clean.parquet`) and the baked frontend bundle (`web/static/ppd-data.js`) are both committed to the repo, so a fresh clone has everything it needs — **you do not need to run any notebooks** to use the website.
+
+### Requirements
+
+- **Python 3.11** (pinned via [`.python-version`](.python-version)). The analysis backend uses `linearmodels` and `statsmodels`, which are tested on 3.11; other versions may hit build errors.
+- macOS, Linux, or WSL with `bash` for `./run.sh`. Windows users can run `python -m web.bake_data && python -m uvicorn web.server:app --host 127.0.0.1 --port 8000 --reload` instead.
+
+### Useful flags
+
+```sh
+PORT=8080 ./run.sh        # use a different port
+SKIP_BAKE=1 ./run.sh       # skip re-baking the data bundle (faster restart for UI-only edits)
+HOST=0.0.0.0 ./run.sh      # expose to your LAN
+```
+
+### Troubleshooting
+
+- **`✗ .venv not found at .venv/`** — Run `python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt` then retry.
+- **`✗ Data file missing`** — The parquet is normally tracked in git. Try `git pull` or re-clone. If you really need to regenerate it, see the data-pipeline section below — but most users never need to.
+- **Port 8000 already in use** — Use `PORT=8080 ./run.sh` (or any free port).
+- **VS Code / PyCharm doesn't see the venv** — Point your interpreter at `<repo>/.venv/bin/python` manually.
+- **`linearmodels` / `statsmodels` install fails** — Check `python3 --version`. If it isn't 3.11.x, install Python 3.11 (e.g. `pyenv install 3.11`) and recreate the venv.
+
+> **Note on the pipeline notebooks.** `notebooks/01_create_mapping_table.ipynb` through `notebooks/05_clean_ppd.ipynb` are currently empty stubs in this repo — the cleaned parquet they would produce is committed directly. The descriptions in section 1 below document the intended pipeline, but you do not need to execute the notebooks to run the dashboard or use the analysis page.
+
+---
+
+A Python implementation of the [Public Plans Database (PPD)](https://publicplansdata.org/public-plans-database/download-full-data-set/) cleaning pipeline (Center for Retirement Research, Boston College), a full replication of key tables and figures from **Begenau, Liang & Siriwardane (2026, *Review of Financial Studies*)** *"The Rise of Alternatives,"* and an interactive web dashboard (`./run.sh` → http://localhost:8000) that surfaces the cleaned panel for exploratory research.
 
 ## Credits & Attribution
 

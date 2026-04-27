@@ -5,10 +5,20 @@
 // Component names start capital so JSX treats them as components, not tags.
 
 const _PA_TEST_TYPES = [
-  { id: 'univariate',   label: 'Univariate',   sub: 'Y over time, optionally split' },
-  { id: 'ols',          label: 'OLS',          sub: 'Regression with controls + FE' },
-  { id: 'event_study',  label: 'Event Study',  sub: 'Two-group comparison over time' },
-  { id: 'correlation',  label: 'Correlation',  sub: 'Pairwise matrix + scatter' },
+  { id: 'univariate',        label: 'Univariate',        sub: 'Y over time, optionally split' },
+  { id: 'ols',               label: 'OLS',               sub: 'Regression with controls + FE' },
+  { id: 'group_comparison',  label: 'Group Comparison',  sub: 'Two-group AUM-weighted time series + difference' },
+  { id: 'correlation',       label: 'Correlation',       sub: 'Pairwise matrix + scatter' },
+];
+
+const _PA_WEIGHTS_OPTIONS = [
+  { value: 'equal', label: 'Equal-weighted', sub: 'every system-year counts the same' },
+  { value: 'aum',   label: 'AUM-weighted',   sub: 'paper-style WLS by MktAssets_net' },
+];
+
+const _PA_CLUSTER_OPTIONS = [
+  { value: 'entity',  label: 'Entity cluster',     sub: 'pub_id only' },
+  { value: 'twoway',  label: 'Two-way cluster',    sub: 'pub_id × fy (Cameron-Gelbach-Miller)' },
 ];
 
 const _PA_GROUP_OPTIONS = [
@@ -224,6 +234,28 @@ function PAUnivariateResult({ result, vars, spec }) {
 
 // ── OLS ──────────────────────────────────────────────────────────────────────
 
+function PAPillRadio({ value, options, onChange }) {
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, paddingTop: 4 }}>
+      {options.map(o => {
+        const on = value === o.value;
+        return (
+          <label key={o.value} title={o.sub} style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '6px 10px', cursor: 'pointer',
+            border: `1px solid ${on ? window.C.blue : window.C.border}`,
+            background: on ? 'rgba(59,130,246,0.1)' : 'transparent',
+            fontFamily: window.mono, fontSize: 11, color: on ? window.C.textPrimary : window.C.textMuted,
+          }}>
+            <input type="radio" checked={on} onChange={() => onChange(o.value)} style={{ accentColor: window.C.blue }} />
+            {o.label}
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
 function PAOlsForm({ spec, setSpec, vars }) {
   const opts = _PA_yxOptions(vars);
   function setXs(xs) { setSpec({ ...spec, xs }); }
@@ -271,6 +303,16 @@ function PAOlsForm({ spec, setSpec, vars }) {
         </PASpecField>
         <PASpecField label="Controls (optional)" hint="Estimated but de-emphasized in summary">
           <PAMultiSelect value={spec.controls || []} onChange={setControls} options={opts} height={140} />
+        </PASpecField>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        <PASpecField label="Weighting" hint="AUM-weighted matches the paper's Table-1-style WLS">
+          <PAPillRadio value={spec.weights || 'equal'} options={_PA_WEIGHTS_OPTIONS}
+                       onChange={v => setSpec({ ...spec, weights: v })} />
+        </PASpecField>
+        <PASpecField label="SE clustering" hint="Two-way absorbs both within-fund and within-year correlation">
+          <PAPillRadio value={spec.cluster || 'entity'} options={_PA_CLUSTER_OPTIONS}
+                       onChange={v => setSpec({ ...spec, cluster: v })} />
         </PASpecField>
       </div>
     </div>
@@ -348,10 +390,15 @@ function PAOlsResult({ result, vars, spec }) {
         </ResponsiveContainer>
       </window.ChartShell>
 
-      {/* Scatter for first X vs Y with univariate fit line */}
+      {/* Scatter for first X vs Y. With controls/FE this is a partial-regression
+          plot whose slope = the multivariate β shown in the table (FWL identity). */}
       {result.scatter && (
         <window.ChartShell
-          title={`${result.scatter.x_label} vs ${_PA_yLabel(vars, result.scatter.y_label)}`}
+          title={
+            (result.scatter.is_partial ? 'Partial-regression: ' : '') +
+            `${result.scatter.x_label} vs ${_PA_yLabel(vars, result.scatter.y_label)}` +
+            (result.scatter.is_partial ? ' (residualized)' : '')
+          }
           insight={result.scatter.fit_note}
           height={300}
         >
@@ -386,7 +433,7 @@ function PAOlsResult({ result, vars, spec }) {
   );
 }
 
-// ── EVENT STUDY ──────────────────────────────────────────────────────────────
+// ── GROUP COMPARISON (two-group AUM-weighted time series + difference) ──────
 
 function PAGroupBuilder({ label, group, setGroup }) {
   const stateOptions = (window.PPDData?.STATES || [])
@@ -416,11 +463,11 @@ function PAGroupBuilder({ label, group, setGroup }) {
   );
 }
 
-function PAEventForm({ spec, setSpec, vars }) {
+function PAGroupComparisonForm({ spec, setSpec, vars }) {
   const opts = _PA_yxOptions(vars);
   return (
     <div style={{ ..._PA_cardStyle, display: 'grid', gap: 16 }}>
-      <PASpecField label="Y variable">
+      <PASpecField label="Y variable" hint="Descriptive comparison only — not a formal event study (no event date, no DiD).">
         <select value={spec.y} onChange={e => setSpec({ ...spec, y: e.target.value })} style={_PA_selectStyle}>
           {opts.map(g => (
             <optgroup key={g.optgroup} label={g.optgroup}>
@@ -430,14 +477,14 @@ function PAEventForm({ spec, setSpec, vars }) {
         </select>
       </PASpecField>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-        <PAGroupBuilder label="Group A (treatment)" group={spec.group_a} setGroup={g => setSpec({ ...spec, group_a: g })} />
-        <PAGroupBuilder label="Group B (control)"   group={spec.group_b} setGroup={g => setSpec({ ...spec, group_b: g })} />
+        <PAGroupBuilder label="Group A" group={spec.group_a} setGroup={g => setSpec({ ...spec, group_a: g })} />
+        <PAGroupBuilder label="Group B" group={spec.group_b} setGroup={g => setSpec({ ...spec, group_b: g })} />
       </div>
     </div>
   );
 }
 
-function PAEventResult({ result, vars, spec }) {
+function PAGroupComparisonResult({ result, vars, spec }) {
   const { ComposedChart, Line, XAxis, YAxis, Tooltip, Legend, CartesianGrid, ResponsiveContainer } = Recharts;
   const yMeta = (vars || []).find(v => v.key === spec.y);
   const isPct = _PA_isPctVar(yMeta);
@@ -467,9 +514,9 @@ function PAEventResult({ result, vars, spec }) {
                    tickFormatter={v => isPct ? (v * 100).toFixed(0) + '%' : v.toFixed(2)} width={48} />
             <Tooltip content={<window.CustomTooltip fmt={fmt} />} />
             <Legend wrapperStyle={{ fontFamily: window.mono, fontSize: 10, color: window.C.textMuted }} />
-            <Line yAxisId="left"  type="monotone" dataKey="A"    name="A (treatment)" stroke={window.C.blue}  strokeWidth={2}   dot={false} connectNulls />
-            <Line yAxisId="left"  type="monotone" dataKey="B"    name="B (control)"   stroke={window.C.sky}   strokeWidth={2}   dot={false} strokeDasharray="5 4" connectNulls />
-            <Line yAxisId="right" type="monotone" dataKey="Diff" name="A − B"          stroke={window.C.purple} strokeWidth={1.6} dot={false} strokeDasharray="2 3" connectNulls />
+            <Line yAxisId="left"  type="monotone" dataKey="A"    name="Group A"   stroke={window.C.blue}   strokeWidth={2}   dot={false} connectNulls />
+            <Line yAxisId="left"  type="monotone" dataKey="B"    name="Group B"   stroke={window.C.sky}    strokeWidth={2}   dot={false} strokeDasharray="5 4" connectNulls />
+            <Line yAxisId="right" type="monotone" dataKey="Diff" name="A − B"     stroke={window.C.purple} strokeWidth={1.6} dot={false} strokeDasharray="2 3" connectNulls />
           </ComposedChart>
         </ResponsiveContainer>
       </window.ChartShell>
@@ -621,8 +668,11 @@ function AnalysisPage() {
 
   // Per-test specs — kept independently so switching tabs preserves the user's setup
   const [uniSpec, setUniSpec]   = React.useState({ y: 'omega', group_by: '' });
-  const [olsSpec, setOlsSpec]   = React.useState({ y: 'omega', xs: ['log_aum'], controls: [], fe: ['fy'] });
-  const [eventSpec, setEventSpec] = React.useState({
+  const [olsSpec, setOlsSpec]   = React.useState({
+    y: 'omega', xs: ['log_aum'], controls: [], fe: ['fy'],
+    weights: 'equal', cluster: 'entity',
+  });
+  const [groupSpec, setGroupSpec] = React.useState({
     y: 'omega',
     group_a: { by: 'StateAbbrev', values: ['CA'] },
     group_b: { by: 'StateAbbrev', values: ['TX'] },
@@ -648,8 +698,11 @@ function AnalysisPage() {
   function buildSpec(t, override) {
     if (override) return override;
     if (t === 'univariate') return { y: uniSpec.y, group_by: uniSpec.group_by || null };
-    if (t === 'ols')        return { y: olsSpec.y, xs: olsSpec.xs, controls: olsSpec.controls, fe: olsSpec.fe };
-    if (t === 'event_study') return { y: eventSpec.y, group_a: eventSpec.group_a, group_b: eventSpec.group_b };
+    if (t === 'ols')        return {
+      y: olsSpec.y, xs: olsSpec.xs, controls: olsSpec.controls, fe: olsSpec.fe,
+      weights: olsSpec.weights, cluster: olsSpec.cluster,
+    };
+    if (t === 'group_comparison') return { y: groupSpec.y, group_a: groupSpec.group_a, group_b: groupSpec.group_b };
     if (t === 'correlation') return { vars: corrSpec.vars, scatter_pair: corrSpec.scatter_pair };
   }
 
@@ -682,7 +735,7 @@ function AnalysisPage() {
   // CSV rows depend on test type
   const csvData = React.useMemo(() => {
     if (!result) return [];
-    if (resultTest === 'univariate' || resultTest === 'event_study') {
+    if (resultTest === 'univariate' || resultTest === 'group_comparison') {
       const out = [];
       result.series.forEach(s => s.points.forEach(p => out.push({ group: s.group, year: p.year, value: p.value, n: p.n })));
       return out;
@@ -750,10 +803,10 @@ function AnalysisPage() {
       )}
       {vars && (
         <>
-          {testType === 'univariate'  && <PAUnivariateForm  spec={uniSpec}   setSpec={setUniSpec}   vars={vars} />}
-          {testType === 'ols'         && <PAOlsForm         spec={olsSpec}   setSpec={setOlsSpec}   vars={vars} />}
-          {testType === 'event_study' && <PAEventForm       spec={eventSpec} setSpec={setEventSpec} vars={vars} />}
-          {testType === 'correlation' && <PACorrelationForm spec={corrSpec}  setSpec={setCorrSpec}  vars={vars} />}
+          {testType === 'univariate'        && <PAUnivariateForm        spec={uniSpec}   setSpec={setUniSpec}   vars={vars} />}
+          {testType === 'ols'               && <PAOlsForm               spec={olsSpec}   setSpec={setOlsSpec}   vars={vars} />}
+          {testType === 'group_comparison'  && <PAGroupComparisonForm   spec={groupSpec} setSpec={setGroupSpec} vars={vars} />}
+          {testType === 'correlation'       && <PACorrelationForm       spec={corrSpec}  setSpec={setCorrSpec}  vars={vars} />}
 
           <div style={{ marginBottom: 24 }}>
             <button
@@ -795,10 +848,10 @@ function AnalysisPage() {
             />
           </div>
 
-          {resultTest === 'univariate'  && <PAUnivariateResult  result={result} vars={vars} spec={uniSpec}   />}
-          {resultTest === 'ols'         && <PAOlsResult         result={result} vars={vars} spec={olsSpec}   />}
-          {resultTest === 'event_study' && <PAEventResult       result={result} vars={vars} spec={eventSpec} />}
-          {resultTest === 'correlation' && <PACorrelationResult result={result} vars={vars} spec={corrSpec} onScatterPairClick={handleScatterPairClick} />}
+          {resultTest === 'univariate'        && <PAUnivariateResult        result={result} vars={vars} spec={uniSpec}   />}
+          {resultTest === 'ols'               && <PAOlsResult               result={result} vars={vars} spec={olsSpec}   />}
+          {resultTest === 'group_comparison'  && <PAGroupComparisonResult   result={result} vars={vars} spec={groupSpec} />}
+          {resultTest === 'correlation'       && <PACorrelationResult       result={result} vars={vars} spec={corrSpec} onScatterPairClick={handleScatterPairClick} />}
         </div>
       )}
     </div>

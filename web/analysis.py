@@ -9,8 +9,8 @@ Public API
     build_panel() -> pd.DataFrame   # cached system-year panel
     get_variables() -> list[dict]   # variable registry
     run_univariate(y, group_by) -> dict
-    run_ols(y, xs, controls, fe) -> dict
-    run_event_study(y, group_a, group_b) -> dict
+    run_ols(y, xs, controls, fe, weights, cluster) -> dict
+    run_group_comparison(y, group_a, group_b) -> dict
     run_correlation(vars_list, scatter_pair) -> dict
 """
 from __future__ import annotations
@@ -210,23 +210,43 @@ def _validate_var(name: str, val: str) -> None:
         raise ValueError(f"{name} {val!r} is not a numeric variable")
 
 
+_WEIGHTS_OPTIONS: set[str] = {"equal", "aum"}
+_CLUSTER_OPTIONS: set[str] = {"entity", "twoway"}
+
+
 def run_ols(
     y: str,
     xs: list[str],
     controls: list[str] | None = None,
     fe: list[str] | None = None,
+    weights: str = "equal",
+    cluster: str = "entity",
 ) -> dict:
-    """Panel OLS of Y on Xs (+ optional controls and fixed effects).
+    """Panel OLS of Y on Xs (+ optional controls, fixed effects, weights, cluster mode).
 
-    Cluster-robust SEs by ``pub_id``. Returns a coefficient table for the
-    explicitly-listed Xs and controls (FE dummies are fitted but not surfaced),
-    a residual-by-year series, and a raw scatter for the first X with a
-    univariate fit line for visualization.
+    Parameters
+    ----------
+    weights : {"equal", "aum"}
+        ``"equal"`` (default) gives every system-year the same weight. ``"aum"``
+        weights observations by ``MktAssets_net`` — paper-style WLS where larger
+        funds dominate the estimate.
+    cluster : {"entity", "twoway"}
+        ``"entity"`` (default) clusters SEs by ``pub_id`` only. ``"twoway"``
+        clusters by both ``pub_id`` and ``fy`` (Cameron-Gelbach-Miller),
+        appropriate when residuals are correlated within both dimensions.
+
+    Returns the coefficient table, a residual-by-year series, and a partial-
+    regression scatter for the first X (slope = the multivariate β shown in
+    the coefficient table, by Frisch-Waugh-Lovell).
     """
     controls = controls or []
     fe = fe or []
     if not xs:
         raise ValueError("OLS requires at least one X variable")
+    if weights not in _WEIGHTS_OPTIONS:
+        raise ValueError(f"weights must be one of {sorted(_WEIGHTS_OPTIONS)}; got {weights!r}")
+    if cluster not in _CLUSTER_OPTIONS:
+        raise ValueError(f"cluster must be one of {sorted(_CLUSTER_OPTIONS)}; got {cluster!r}")
     _validate_var("y", y)
     for v in xs:
         _validate_var("X", v)
@@ -237,7 +257,7 @@ def run_ols(
             raise ValueError(f"FE {f!r} must be one of {sorted(_FE_OPTIONS)}")
 
     panel = build_panel()
-    needed = list({"pub_id", "fy", y, *xs, *controls, "StateAbbrev", "consultant_id"})
+    needed = list({"pub_id", "fy", y, *xs, *controls, "MktAssets_net", "StateAbbrev", "consultant_id"})
     df = panel[needed].dropna(subset=[y, *xs, *controls, "pub_id", "fy"]).copy()
 
     # Drop rows missing a requested categorical FE so they don't get bucketed
@@ -246,8 +266,12 @@ def run_ols(
     if fe_categorical:
         df = df.dropna(subset=fe_categorical)
 
+    # When AUM-weighted, drop rows with missing/zero weights too.
+    if weights == "aum":
+        df = df[df["MktAssets_net"].notna() & (df["MktAssets_net"] > 0)]
+
     if df.empty:
-        raise ValueError("No observations after dropping rows with missing y/x/controls/FE")
+        raise ValueError("No observations after dropping rows with missing y/x/controls/FE/weights")
 
     model_x_cols = list(xs) + list(controls)
 
@@ -265,14 +289,21 @@ def run_ols(
     from linearmodels.panel import PanelOLS  # local import to keep module load light
 
     panel_df = df.set_index(["pub_id", "fy"])
+    w_series = panel_df["MktAssets_net"].astype(float) if weights == "aum" else None
+
+    fit_kwargs: dict = {"cov_type": "clustered", "cluster_entity": True}
+    if cluster == "twoway":
+        fit_kwargs["cluster_time"] = True
+
     res = PanelOLS(
         panel_df[y],
         panel_df[model_x_cols],
+        weights=w_series,
         entity_effects=use_entity,
         time_effects=use_time,
         drop_absorbed=True,
         check_rank=False,
-    ).fit(cov_type="clustered", cluster_entity=True)
+    ).fit(**fit_kwargs)
 
     # Coefficient table — restrict to user-named regressors (not dummy bloat)
     user_named = set(xs) | set(controls)
@@ -306,27 +337,67 @@ def run_ols(
             "p90": float(g["resid"].quantile(0.90)),
         })
 
-    # Scatter: first X vs Y with univariate OLS line (separate from multivariate β)
+    # Partial-regression scatter for the first X (Frisch-Waugh-Lovell).
+    # The slope on this scatter is *exactly* the multivariate β shown in the
+    # coefficient table, because:
+    #     residual(Y on others, FE) = main_residuals + β_first_x · residual(X on others, FE)
+    # When there are no other regressors and no FE, partial residuals collapse
+    # to mean-centred raw values and the slope == univariate slope == β anyway.
     first_x = xs[0]
-    x_raw = df[first_x].to_numpy(dtype=float)
-    y_raw = df[y].to_numpy(dtype=float)
-    slope, intercept = np.polyfit(x_raw, y_raw, 1)
-    xmin, xmax = float(x_raw.min()), float(x_raw.max())
-    points = [{"x": float(xi), "y": float(yi)} for xi, yi in zip(x_raw, y_raw)]
+    other_x_cols = [c for c in model_x_cols if c != first_x]
+
+    if not other_x_cols and not use_entity and not use_time:
+        # Nothing to partial out → centre raw values around their means.
+        e_x = panel_df[first_x].to_numpy(dtype=float) - float(panel_df[first_x].mean())
+        e_y = panel_df[y].to_numpy(dtype=float) - float(panel_df[y].mean())
+    else:
+        # Auxiliary regression of first_x on (other regressors + FE) to get e_x;
+        # then FWL identity gives e_y from main residuals + β · e_x.
+        if other_x_cols:
+            aux_x_fit = PanelOLS(
+                panel_df[first_x], panel_df[other_x_cols],
+                weights=w_series,
+                entity_effects=use_entity, time_effects=use_time,
+                drop_absorbed=True, check_rank=False,
+            ).fit(cov_type="unadjusted")
+            e_x = aux_x_fit.resids.to_numpy(dtype=float)
+        else:
+            # FE-only case: demean first_x by FE without other regressors.
+            const = pd.DataFrame({"_const": 1.0}, index=panel_df.index)
+            aux_x_fit = PanelOLS(
+                panel_df[first_x], const,
+                weights=w_series,
+                entity_effects=use_entity, time_effects=use_time,
+                drop_absorbed=True, check_rank=False,
+            ).fit(cov_type="unadjusted")
+            e_x = aux_x_fit.resids.to_numpy(dtype=float)
+        beta_first = float(res.params[first_x]) if first_x in res.params.index else 0.0
+        e_y = res.resids.to_numpy(dtype=float) + beta_first * e_x
+
+    points = [{"x": float(xi), "y": float(yi)} for xi, yi in zip(e_x, e_y)]
     if len(points) > _SCATTER_CAP:
         rng = np.random.default_rng(42)
         idx = rng.choice(len(points), size=_SCATTER_CAP, replace=False)
         points = [points[i] for i in sorted(idx.tolist())]
+
+    # Fit line: slope = β from main regression, anchored at e_x range
+    beta_fx = float(res.params[first_x]) if first_x in res.params.index else 0.0
+    e_x_min, e_x_max = float(min(e_x)), float(max(e_x))
+    fit_line = [
+        {"x": e_x_min, "y": beta_fx * e_x_min},
+        {"x": e_x_max, "y": beta_fx * e_x_max},
+    ]
     scatter = {
         "x_label": first_x,
         "y_label": y,
+        "is_partial": (bool(other_x_cols) or use_entity or use_time),
         "points": points,
-        "fit_line": [
-            {"x": xmin, "y": float(intercept + slope * xmin)},
-            {"x": xmax, "y": float(intercept + slope * xmax)},
-        ],
+        "fit_line": fit_line,
         "fit_note": (
-            f"Univariate OLS slope = {slope:.4g} (multivariate β shown in coefficient table)."
+            f"Partial-regression plot (FWL). Line slope = β = {beta_fx:.4g} — "
+            f"matches the multivariate coefficient in the table above."
+            if (other_x_cols or use_entity or use_time)
+            else f"Univariate fit. Slope = β = {beta_fx:.4g} (no controls/FE to partial out)."
         ),
     }
 
@@ -335,6 +406,8 @@ def run_ols(
     if not np.isfinite(r2_within):
         r2_within = None
 
+    cluster_desc = "clustered SE by pub_id" if cluster == "entity" else "two-way clustered SE (pub_id × fy)"
+    weight_desc = "AUM-weighted" if weights == "aum" else "equal-weighted"
     sample = {
         "n": int(res.nobs),
         "n_systems": int(panel_df.index.get_level_values("pub_id").nunique()),
@@ -342,12 +415,14 @@ def run_ols(
         "fy_max": int(panel_df.index.get_level_values("fy").max()),
         "r2": float(res.rsquared),
         "r2_within": r2_within,
+        "weights": weights,
+        "cluster": cluster,
     }
     fe_desc = " + ".join(f"{f} FE" for f in fe) or "no FE"
     summary = (
         f"OLS of {y} on {', '.join(xs)}"
         + (f" with controls {', '.join(controls)}" if controls else "")
-        + f"; {fe_desc}; clustered SE by pub_id; N={sample['n']:,}, "
+        + f"; {fe_desc}; {weight_desc}; {cluster_desc}; N={sample['n']:,}, "
         + f"R²={sample['r2']:.3f}"
         + (f" (within={r2_within:.3f})" if r2_within is not None else "")
         + "."
@@ -361,9 +436,13 @@ def run_ols(
     }
 
 
-# ── Event study (two-group time series) ───────────────────────────────────────
+# ── Two-group comparison (AUM-weighted Y by year, A vs B) ─────────────────────
 
-_EVENT_DIMS: set[str] = {"consultant_id", "StateAbbrev"}
+# Note: this is a descriptive group-comparison test, not a formal event study —
+# there is no event date, no pre/post split, and no parallel-trends assumption.
+# The output is simply two AUM-weighted time series plus their difference.
+
+_GROUP_DIMS: set[str] = {"consultant_id", "StateAbbrev"}
 
 
 def _coerce_match(by: str, values: list) -> list:
@@ -379,17 +458,19 @@ def _coerce_match(by: str, values: list) -> list:
     return [str(v) for v in values]
 
 
-def run_event_study(y: str, group_a: dict, group_b: dict) -> dict:
+def run_group_comparison(y: str, group_a: dict, group_b: dict) -> dict:
     """Two-group AUM-weighted Y by year, plus an A−B difference series.
 
     Each group is a filter ``{by: 'consultant_id'|'StateAbbrev', values: [...]}``.
+    Descriptive only — does *not* implement event-time dynamics or
+    difference-in-differences.
     """
     _validate_var("y", y)
     for name, g in (("group_a", group_a), ("group_b", group_b)):
         if not isinstance(g, dict) or "by" not in g or "values" not in g:
             raise ValueError(f"{name} must be {{by, values}}")
-        if g["by"] not in _EVENT_DIMS:
-            raise ValueError(f"{name}.by must be one of {sorted(_EVENT_DIMS)}")
+        if g["by"] not in _GROUP_DIMS:
+            raise ValueError(f"{name}.by must be one of {sorted(_GROUP_DIMS)}")
         if not g["values"]:
             raise ValueError(f"{name}.values is empty")
 
@@ -431,7 +512,7 @@ def run_event_study(y: str, group_a: dict, group_b: dict) -> dict:
         head = list(vs)[:3]
         return f"{head}{'…' if len(vs) > 3 else ''}"
     summary = (
-        f"Event study of {y}: A ({group_a['by']}={_fmt_vals(group_a['values'])}) vs "
+        f"Group comparison of {y}: A ({group_a['by']}={_fmt_vals(group_a['values'])}) vs "
         f"B ({group_b['by']}={_fmt_vals(group_b['values'])}). "
         f"N_A={sample['n_a']:,} obs / {sample['n_systems_a']} systems · "
         f"N_B={sample['n_b']:,} obs / {sample['n_systems_b']} systems."
