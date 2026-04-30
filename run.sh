@@ -16,7 +16,16 @@ PY=".venv/bin/python"
 UVICORN=".venv/bin/uvicorn"
 
 if [[ ! -x "$PY" ]]; then
-  echo "✗ .venv not found at .venv/ — run: python3 -m venv .venv && .venv/bin/pip install -r requirements.txt"
+  echo "✗ .venv not found at .venv/ — run: python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt"
+  exit 1
+fi
+
+PARQUET="output_python/ppd_plan_level_clean.parquet"
+if [[ ! -f "$PARQUET" ]]; then
+  echo "✗ Data file missing: $PARQUET"
+  echo "  The parquet is normally tracked in git. Try: git pull (or re-clone the repo)."
+  echo "  If you really need to regenerate it, run notebooks/01_create_mapping_table.ipynb"
+  echo "  through notebooks/05_clean_ppd.ipynb in order — but most users never need to."
   exit 1
 fi
 

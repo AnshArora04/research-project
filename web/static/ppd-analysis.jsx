@@ -107,6 +107,8 @@ function PASpecField({ label, hint, children }) {
 }
 
 // Multi-select helper — renders a native <select multiple> with grouped options.
+// Used by the picker forms (Group Comparison values, Correlation vars) where
+// list size can be 50+ items.
 function PAMultiSelect({ value, onChange, options, height = 110 }) {
   function handle(e) {
     const picks = Array.from(e.target.selectedOptions).map(o => o.value);
@@ -124,6 +126,86 @@ function PAMultiSelect({ value, onChange, options, height = 110 }) {
         )
       ))}
     </select>
+  );
+}
+
+// Checkbox-list multi-select — friendlier than native <select multiple> for the
+// known-small variable picker (3 groups × ~5 items). Click anywhere on a row to
+// toggle; selected rows highlight blue. Used by OLS X and Controls fields.
+function PACheckboxList({ value, onChange, options, height = 220 }) {
+  const selected = new Set(value || []);
+  function toggle(v) {
+    const next = new Set(selected);
+    next.has(v) ? next.delete(v) : next.add(v);
+    onChange([...next]);
+  }
+  const allItems = options.flatMap(o => o.optgroup ? o.items : [o]);
+  const allSelected = allItems.length > 0 && allItems.every(it => selected.has(it.value));
+  function selectAll() { onChange(allItems.map(it => it.value)); }
+  function clearAll() { onChange([]); }
+
+  function Row({ it }) {
+    const on = selected.has(it.value);
+    return (
+      <label
+        onMouseEnter={e => { if (!on) e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; }}
+        onMouseLeave={e => { if (!on) e.currentTarget.style.background = 'transparent'; }}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '6px 10px', cursor: 'pointer',
+          background: on ? 'rgba(59,130,246,0.12)' : 'transparent',
+          color: on ? window.C.textPrimary : window.C.textMuted,
+          borderLeft: on ? `2px solid ${window.C.blue}` : '2px solid transparent',
+          fontSize: 12, lineHeight: 1.3,
+        }}>
+        <input type="checkbox" checked={on} onChange={() => toggle(it.value)}
+               style={{ accentColor: window.C.blue, margin: 0 }} />
+        <span>{it.label}</span>
+      </label>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        fontFamily: window.mono, fontSize: 10, color: window.C.textMuted,
+        marginBottom: 4, paddingRight: 2,
+      }}>
+        <span>{selected.size} selected</span>
+        <span>
+          <button onClick={allSelected ? clearAll : selectAll}
+                  style={{
+                    background: 'transparent', border: 'none', color: window.C.blue,
+                    fontFamily: window.mono, fontSize: 10, cursor: 'pointer',
+                    padding: '0 4px', textTransform: 'uppercase', letterSpacing: '0.06em',
+                  }}>
+            {allSelected ? 'Clear' : 'All'}
+          </button>
+        </span>
+      </div>
+      <div style={{
+        height, overflowY: 'auto',
+        background: '#0A1020',
+        border: `1px solid ${window.C.border}`,
+        fontFamily: window.mono,
+      }}>
+        {options.map(o => o.optgroup ? (
+          <div key={o.optgroup}>
+            <div style={{
+              color: window.C.textMuted, fontSize: 9, fontWeight: 600,
+              textTransform: 'uppercase', letterSpacing: '0.12em',
+              padding: '6px 10px 4px',
+              background: '#0D1526',
+              borderBottom: `1px solid ${window.C.border}`,
+            }}>{o.optgroup}</div>
+            {o.items.map(it => <Row key={it.value} it={it} />)}
+          </div>
+        ) : (
+          <Row key={o.value} it={o} />
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -298,11 +380,11 @@ function PAOlsForm({ spec, setSpec, vars }) {
         </PASpecField>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-        <PASpecField label="X variables (regressors of interest)" hint="Cmd/Ctrl-click to select multiple">
-          <PAMultiSelect value={spec.xs || []} onChange={setXs} options={opts} height={140} />
+        <PASpecField label="X variables (regressors of interest)" hint="Click any row to toggle">
+          <PACheckboxList value={spec.xs || []} onChange={setXs} options={opts} height={220} />
         </PASpecField>
         <PASpecField label="Controls (optional)" hint="Estimated but de-emphasized in summary">
-          <PAMultiSelect value={spec.controls || []} onChange={setControls} options={opts} height={140} />
+          <PACheckboxList value={spec.controls || []} onChange={setControls} options={opts} height={220} />
         </PASpecField>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
